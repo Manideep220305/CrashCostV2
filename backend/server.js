@@ -14,6 +14,9 @@ const Claim = require('./models/Claim');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// 1. Trust Render's Load Balancer (Strongly Recommended Fix #2)
+app.set('trust proxy', 1); 
+
 // --- 1. MULTI-KEY ROTATOR LOGIC ---
 // This pulls all 3 keys from your .env file to bypass the 1,500 limit
 const ALL_KEYS = [
@@ -21,6 +24,13 @@ const ALL_KEYS = [
     process.env.GEMINI_API_KEY_1,
     process.env.GEMINI_API_KEY_2
 ].filter(k => k); 
+
+// 2. Fail Fast Key Validation (Strongly Recommended Fix #3)
+// FIX: Moved this BELOW the ALL_KEYS array definition so it doesn't crash Node!
+if (ALL_KEYS.length === 0) {
+    console.error("❌ CRITICAL ERROR: No Gemini API keys found in environment.");
+    process.exit(1); // Kills the server immediately so you know it's broken
+}
 
 let keyIndex = 0;
 
@@ -168,7 +178,13 @@ app.post('/api/explain', async (req, res) => {
     }
 });
 
-// --- 6. DATA FETCHING & START ---
+// --- 6. DATA FETCHING & HEALTH CHECK ROUTE ---
+
+// Added Health Check for Render (Strongly Recommended Fix #1)
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
 app.get('/api/claims', async (req, res) => {
     try {
         const claims = await Claim.find().sort({ createdAt: -1 });

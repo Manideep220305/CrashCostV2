@@ -683,7 +683,7 @@ export default function DashboardPage() {
       formData.append('vehicleDetails', JSON.stringify(claimData.vehicleDetails));
       formData.append('incidentDetails', JSON.stringify(claimData.incidentDetails));
 
-      const response = await fetch('http://localhost:5000/api/segment-car', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/segment-car`, {
         method: 'POST',
         body: formData,
       });
