@@ -1,94 +1,96 @@
-# Auth Implementation — Error Post-Mortem (March 7, 2026)
+# CrashCost V2 — Deployment Error Log
 
-**Task:** Wire up JWT + bcrypt authentication (backend + frontend)  
-**Expected Time:** ~10 minutes | **Actual Time:** ~1 hour  
-**Root Cause:** 3 cascading configuration misses, compounded by repeated browser testing instead of systematic debugging
+A record of every major error encountered during development and deployment, what caused it, and exactly how it was resolved.
 
 ---
 
-## Error #1: Missing `axios` in Frontend
-
-| Detail | Info |
-|--------|------|
-| **Symptom** | Vite overlay: `Failed to resolve import "axios" from "src/context/AuthContext.jsx"` |
-| **Root Cause** | `AuthContext.jsx` imports `axios`, but it was never installed in `/frontend` |
-| **Why It Happened** | `npm install axios` was run but **failed silently** (exit code 1) due to a peer dependency conflict with the existing `recharts` package |
-| **Fix** | `npm install axios --legacy-peer-deps` |
-| **Time Wasted** | ~10 minutes |
-| **Lesson** | Always check `npm install` exit codes. Use `--legacy-peer-deps` when working with mixed React 18/19 dependency trees. |
-
----
-
-## Error #2: Missing `react-is` Peer Dependency
-
-| Detail | Info |
-|--------|------|
-| **Symptom** | Vite/ESBuild crash: `Could not resolve "react-is"` from `recharts/es6/util/ReactUtils.js` |
-| **Root Cause** | Installing `axios` triggered npm to recalculate the dependency tree, which exposed a previously unresolved `react-is` peer dependency required by `recharts` |
-| **Why It Happened** | `react-is` was a transitive dependency that was silently missing before, only surfacing when npm reshuffled `node_modules` |
-| **Fix** | `npm install react-is` |
-| **Time Wasted** | ~10 minutes |
-| **Lesson** | When Vite crashes after installing a new package, check if the new install broke peer dependencies of existing packages — not just the new one. |
-
----
-
-## Error #3: `AuthProvider` Never Injected into `App.jsx` (THE BIG ONE)
-
-| Detail | Info |
-|--------|------|
-| **Symptom** | Landing page renders as a **blank white screen**. Console says: `An error occurred in the <AuthModal> component` |
-| **Root Cause** | `App.jsx` was never wrapped with `<AuthProvider>`, so `useAuth()` inside `AuthModal` returned `undefined`. Calling `.login()` or `.register()` on `undefined` crashed React's entire component tree |
-| **Why It Happened** | The first `multi_replace_file_content` call to edit `App.jsx` **failed silently** because the file structure didn't match the expected content (App.jsx had `xaiLabPage` imports that weren't in the truncated conversation context). The agent didn't verify the edit was applied and moved on |
-| **Fix** | One line: wrap `<Router>` inside `<AuthProvider>` in `App.jsx` |
-| **Time Wasted** | ~30+ minutes |
-| **Lesson** | **Always verify edits were actually applied** — especially when editing root-level files like `App.jsx`. A failed silent edit at the root can make every downstream component crash with misleading errors. |
-
----
-
-## Error #4: Missing Vite Proxy Configuration
-
-| Detail | Info |
-|--------|------|
-| **Symptom** | Auth Modal shows "Registration failed" error after clicking Create Account |
-| **Root Cause** | Axios was POSTing to `http://localhost:5174/api/auth/register` (Vite's port) instead of `http://localhost:5000/api/auth/register` (Express backend). Vite returned a 404 |
-| **Why It Happened** | `vite.config.js` had no `server.proxy` entry to forward `/api` requests to the backend |
-| **Fix** | Added proxy config to `vite.config.js`: `/api` → `http://localhost:5000` |
-| **Time Wasted** | ~5 minutes |
-| **Lesson** | When frontend and backend run on different ports, you MUST configure the dev server proxy. This is a standard Vite setup step that should be done immediately when adding any backend API calls. |
-
----
-
-## Why It Took So Long (The Spiral)
-
+## Error 1 — Render Build Failed: No package.json found
+**When:** First Render deployment attempt  
+**Error Message:**
 ```
-Error #1 (axios missing) → Vite crashes
-  ↓ fix axios
-Error #2 (react-is missing) → Vite crashes again
-  ↓ fix react-is
-Error #3 (AuthProvider missing) → White screen, misleading error
-  ↓ agent assumes AuthModal JSX is broken
-  ↓ spends 30 min editing AuthModal tags instead of checking App.jsx
-  ↓ runs 5+ browser tests, each taking 2-3 min, all failing
-  ↓ finally checks App.jsx → finds AuthProvider was never added
-  ↓ one-line fix
-Error #4 (no proxy) → 404 on API call
-  ↓ quick fix in vite.config.js
+npm error code ENOENT
+npm error path /opt/render/project/src/package.json
+npm error enoent Could not read package.json
 ```
-
-**Key Takeaway:** The agent kept running expensive browser tests (2-3 min each) hoping each fix worked, instead of stepping back and systematically checking: Dependencies installed? → Provider wrapped? → Proxy configured? → Server running? A checklist-based approach would have caught all 4 issues in under 5 minutes.
+**Root Cause:** Render was looking for `package.json` at the root of the GitHub repo. But in this project, the backend code (Express) lives in a subfolder called `backend/`, not at the root.  
+**Fix:** In the Render Dashboard → "Root Directory" field, set it to `backend`. This tells Render to `cd` into the `backend` folder first before running any commands.
 
 ---
 
-## Files Modified During Auth Implementation
+## Error 2 — Vercel White Screen: MIME Type Error
+**When:** First Vercel deployment attempt  
+**Error Message (browser console):**
+```
+Failed to load module script: Expected a JavaScript-or-Wasm module script
+but the server responded with a MIME type of "text/html".
+```
+**Root Cause:** The `vercel.json` file had a routing rule:
+```json
+"routes": [{ "src": "/(.*)", "dest": "/index.html" }]
+```
+This route is meant to support React Router (so refreshing `/dashboard` doesn't 404). However, `routes` in Vercel is too aggressive — it intercepts **every** request, including the request for the bundled JavaScript file (`/assets/index-XYZ.js`). Vercel was returning an HTML page instead of a JavaScript file. The browser received HTML, tried to execute it as JS, and crashed.  
+**Fix:** Replaced `routes` with `rewrites`:
+```json
+"rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+```
+`rewrites` is non-destructive. It only kicks in when the requested file does not physically exist on disk. Static assets like `.js` and `.css` files exist in the `dist/assets/` folder, so Vercel serves them directly. Routes like `/dashboard` don't exist as files, so Vercel falls back to `index.html` correctly.
 
-| File | Change |
-|------|--------|
-| `backend/models/User.js` | New — Mongoose user schema |
-| `backend/controllers/authController.js` | New — Register + Login logic |
-| `backend/routes/authRoutes.js` | New — POST routes |
-| `backend/middleware/authMiddleware.js` | New — JWT verification middleware |
-| `backend/server.js` | Modified — Mounted auth routes |
-| `frontend/src/context/AuthContext.jsx` | New — Global auth state |
-| `frontend/src/components/AuthModal.jsx` | Modified — Real form submission + error display |
-| `frontend/src/App.jsx` | Modified — Wrapped with AuthProvider |
-| `frontend/vite.config.js` | Modified — Added /api proxy |
+---
+
+## Error 3 — CORS Blocked: Registration/Login Failing on Live Site
+**When:** After both Vercel and Render were successfully deployed  
+**Error Message (browser console):**
+```
+Access to XMLHttpRequest at 'https://crashcostv2-1.onrender.com/api/auth/register'
+from origin 'https://crash-cost-v2.vercel.app' has been blocked by CORS policy.
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+**Root Cause:** During the pre-deployment audit, the backend's CORS policy was tightened from open (`app.use(cors())`) to a strict allowlist that reads the `FRONTEND_URL` environment variable. In production, that env variable wasn't set yet on Render, so the allowlist was essentially empty — blocking the Vercel domain.  
+**Fix:** Added the following environment variable in the Render dashboard:
+- **Key:** `FRONTEND_URL`
+- **Value:** `https://crash-cost-v2.vercel.app`
+
+After Render restarted, the backend's CORS middleware allowed traffic from the live Vercel domain.
+
+---
+
+## Error 4 — Git Commit Failed: Pathspec Error
+**When:** Running `git commit "message"` without the `-m` flag  
+**Error Message:**
+```
+error: pathspec 'Deleted some files' did not match any file(s) known to git
+```
+**Root Cause:** The correct syntax for a git commit message is `git commit -m "message"`. Without `-m`, git tries to interpret the message as a file path.  
+**Fix:** Use the correct syntax: `git commit -m "your message here"`
+
+---
+
+## Error 5 — Duplicate Detections Inflating Repair Cost
+**When:** Testing the AI pipeline  
+**Issue:** YOLO instance segmentation was outputting multiple overlapping bounding boxes for the same piece of damage. Since each detection was priced independently, duplicate detections were added multiple times to the total estimate, causing the cost to be 2-3x the real value.  
+**Root Cause:** YOLO's Non-Maximum Suppression (NMS) wasn't aggressive enough for this use case. It's designed to remove boxes that are nearly identical, but boxes with slight offsets on the same damage region would survive NMS as separate detections.  
+**Fix:** Implemented a post-processing deduplication filter in `backend/controllers/claimController.js` using Intersection over Union (IoU) and containment checks. Any two detections of the same label where IoU > 30% or one box is >50% inside the other are considered the same damage. Only the first one is kept; the rest are discarded. The total estimate is then recalculated from the unique detections only.
+
+---
+
+## Error 6 — Frontend API Calls Failing in Production (Vite Proxy)
+**When:** Pre-deployment audit  
+**Issue:** All 5 API calls in the React frontend used relative paths like `/api/segment-car`. This worked in development because Vite's dev server has a proxy that rewrites `/api/*` to `http://localhost:5000/*`. But Vercel doesn't run Vite's dev server — it just hosts the compiled static files. There is no proxy, so `/api/segment-car` would just try to hit `https://crash-cost-v2.vercel.app/api/segment-car`, which doesn't exist.  
+**Fix:** Replaced every hardcoded relative path with:
+```javascript
+const API_URL = import.meta.env.VITE_API_URL || '';
+const response = await fetch(`${API_URL}/api/segment-car`, ...);
+```
+And set `VITE_API_URL=https://crashcostv2-1.onrender.com` as an environment variable in Vercel. At build time, Vite replaces `import.meta.env.VITE_API_URL` with the real URL string.
+
+---
+
+## Error 7 — node_modules and Large Files Tracked in Git
+**When:** Initial GitHub push  
+**Issue:** The GitHub repository contained `node_modules/`, the YOLO model file `best.pt` (60MB), the CatBoost model `crashcost_pricing_model.cbm` (4MB), and the training dataset `insurevision_pricing_data_v4.csv` (1.3MB). These should never be in version control — they slow down cloning and can expose training data.  
+**Root Cause:** No `.gitignore` files existed at the project root or in the individual `frontend/` and `backend/` subdirectories.  
+**Fix:**
+1. Created `.gitignore` files in root, `frontend/`, and `backend/` directories.
+2. Ran `git rm -r --cached .` to remove everything from the git index (does NOT delete files locally).
+3. Ran `git add .` so git re-staged everything, this time respecting `.gitignore`.
+4. Committed and pushed. The large binary files were deleted from GitHub automatically.

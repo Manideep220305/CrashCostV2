@@ -1,293 +1,429 @@
-InsureVision3 – Learning Roadmap (Simple Steps)
-==============================================
-
-Audience: **You – 3rd year B.Tech CSE, intermediate MERN**  
-Goal: Help you **understand + practice** this project in the right order so you become very strong with it.
-
-You do **not** have to finish everything in one day. Think of this as a **2–4 week roadmap**.
+# MERN Stack Learning Roadmap
+### Placement-Ready in 2 Months
+### Tailored for Manideep — based on CrashCost V2 architecture
 
 ---
 
-Phase 0 – Setup and Orientation (Day 1)
----------------------------------------
-
-**Goal:** Get the project running and know where things are.
-
-1. **Run the backend**
-   - Go to `backend/`.
-   - Install packages: `npm install`.
-   - Create `.env` and set:
-     - `PORT=5000`
-     - `MONGO_URI=<your MongoDB string>`
-     - `JWT_SECRET=<any random string>`
-     - `GEMINI_API_KEY=<your Gemini key>` (optional at first).
-   - Run: `npm run dev`.
-
-2. **Run the frontend**
-   - Go to `frontend/`.
-   - Install packages: `npm install`.
-   - Run: `npm run dev`.
-   - Open `http://localhost:5173` in browser.
-
-3. **Read high-level docs (fast)**
-   - Skim `PROJECT_DOCUMENTATION.md` once.
-   - Don’t try to memorize; just get a **feeling** for the architecture.
-
-Outcome: You can open the app, click around, and you know **which folder is frontend** and **which is backend**.
+> **READ THIS FIRST:** You are not a beginner. You just built and deployed a production full-stack AI web application with JWT auth, MongoDB, Gemini API, custom React hooks, IoU-based deduplication logic, rate limiting, CORS policies, and multi-key rotation. Most placement candidates have not done any of this. Your goal for the next 2 months is to UNDERSTAND what you built deeply, fill knowledge gaps, and practice DSA enough not to get filtered in the first round.
 
 ---
 
-Phase 1 – Frontend Understanding (Days 2–4)
--------------------------------------------
+## Current Skill Inventory (Honest Assessment)
 
-**Goal:** Be comfortable with all React pages and how they talk to the backend.
+**What you BUILT in CrashCost V2 (can speak about confidently):**
+- ✅ React 19 — functional components, hooks (useState, useEffect, useContext), React Router
+- ✅ Custom hooks (`useMockStore`, `useApi`) — state abstraction pattern
+- ✅ React Context API — `AuthContext` (JWT persistence), `ThemeContext` (dark mode)
+- ✅ REST API design — correct HTTP methods, JSON bodies, status codes
+- ✅ Express + Mongoose — MVC pattern, routes, controllers, models, middleware
+- ✅ JWT authentication — sign, verify, decode, 30-day expiry, Bearer token pattern
+- ✅ bcrypt password hashing — hash at register, compare at login
+- ✅ File uploads — Multer, multipart/form-data, temp file lifecycle
+- ✅ CORS configuration — allowlist, credentials, origin function
+- ✅ Rate limiting — express-rate-limit, windowMs, max, trust proxy
+- ✅ Third-party APIs — Axios calls to Hugging Face, Gemini SDK integration
+- ✅ MongoDB Atlas — cloud deployment, Mongoose schema, CRUD, sort
+- ✅ Deployment — Render (backend), Vercel (frontend), env vars, CI/CD
+- ✅ Git — add, commit, push, pull, .gitignore, fixing tracked files
+- ✅ Debugging production issues — CORS errors, MIME type errors, cold starts
 
-1. **Understand how the app starts**
-   - Open and read:
-     - `frontend/src/main.jsx`
-     - `frontend/src/App.jsx`
-   - Make sure you understand:
-     - How routes are defined.
-     - How `ThemeProvider` and `AuthProvider` wrap the app.
-
-2. **Study global contexts**
-   - Read `frontend/src/context/AuthContext.jsx` carefully.
-     - How `login`, `register`, `logout` work.
-     - How `localStorage` and Axios default headers are used.
-   - Read `frontend/src/context/ThemeContext.jsx`.
-     - How theme is stored and how the `dark` class is applied.
-
-3. **Deep dive into each page**
-   - Follow `FRONTEND_DOCUMENTATION.md` section by section:
-     - `LandingPage` → Understand the marketing and AuthModal usage.
-     - `DashboardPage` → Pay special attention to:
-       - `useMockStore` (wizard state).
-       - `handleAnalyze` (FormData + fetch to `/api/segment-car`).
-       - `AssessmentReport` (how it reads `report` + `claimId`).
-     - `AnalyticsPage` → See how:
-       - `/api/claims` is called.
-       - Stats and charts are computed.
-       - Inline “Ask AI” chat is wired to `/api/explain`.
-     - `XaiLabPage` → See:
-       - How `claimId` is read from URL.
-       - How chat history is stored.
-       - How `/api/explain` is used.
-
-4. **Trace one full frontend flow**
-   - Start at `LandingPage`:
-     - Open Auth modal, log in.
-   - Go to `Dashboard`:
-     - Fill form + upload image (you can use dummy image).
-     - Click Analyze.
-   - Watch console logs in browser DevTools and React code:
-     - Follow where `handleAnalyze` is called.
-     - See where response comes back and how `AssessmentReport` is shown.
-
-Outcome: You can explain “when I click this button, which React component runs and which backend URL is called?” for all main actions.
+**What you need to learn/solidify:**
+- ⚠️ JavaScript deep fundamentals (closures, prototype, event loop, `this`)
+- ⚠️ React internals (virtual DOM, reconciliation, render optimization)
+- ⚠️ Node.js internals (event loop, non-blocking I/O, streams)
+- ⚠️ Data Structures & Algorithms (mandatory for placement rounds)
+- ⚠️ System design basics (for technical interviews at product companies)
+- ⚠️ Testing (zero tests in CrashCost V2 — placement projects need this)
 
 ---
 
-Phase 2 – Backend Understanding (Days 5–7)
-------------------------------------------
+## Month 1 — Understanding What You Built + Filling Gaps
 
-**Goal:** Be comfortable with Express routes, controllers, models, and AI calls.
+### Week 1: JavaScript Fundamentals That Interviewers Actually Ask
 
-1. **Study server startup**
-   - Read `backend/server.js` slowly.
-   - Understand:
-     - How Express is created.
-     - How `cors`, JSON parsing, and Multer are set up.
-     - How MongoDB is connected (`MONGO_URI`).
-     - How `authRoutes` and `claimRoutes` are mounted.
-     - What `/healthz` does.
+These are the exact JS topics that appear in every MERN placement interview. You need to answer these in 30 seconds without searching.
 
-2. **Understand models**
-   - Open `backend/models/User.js`:
-     - Note fields and timestamps.
-   - Open `backend/models/Claim.js`:
-     - Carefully read all fields in `vehicleDetails`, `incidentDetails`, `aiReport`.
-     - Try to connect each field to what you see in the frontend UI.
+#### Closures
+```javascript
+// What is this output and why?
+function counter() {
+  let count = 0;
+  return function() {
+    count++;
+    return count;
+  };
+}
+const c = counter();
+console.log(c()); // 1
+console.log(c()); // 2
+// Answer: The inner function "closes over" count — it keeps a reference to
+// the variable even after counter() has returned. Each call to c() uses the SAME count.
+```
+You already used closures in `getNextGeminiModel()` — the `keyIndex` variable is closed over by the returned function.
 
-3. **Understand auth**
-   - Read `backend/controllers/authController.js`:
-     - How `registerUser` and `loginUser` work.
-     - How `generateToken` works.
-   - Read `backend/routes/authRoutes.js`.
-   - Read `backend/middleware/authMiddleware.js`:
-     - How JWT is read and verified.
-     - How `req.user` is attached.
+#### `this` Keyword
+```javascript
+const obj = {
+  name: 'CrashCost',
+  greet: function() { console.log(this.name); },        // 'CrashCost'
+  arrowGreet: () => { console.log(this.name); }          // undefined (arrow has no 'this')
+};
+obj.greet();         // logs 'CrashCost'
+obj.arrowGreet();    // logs undefined (or global)
+```
+In Express controllers: `const protect = async (req, res, next) => { ... }` — arrow functions are used so `this` doesn't change when Express calls the function.
 
-4. **Understand claim analysis + AI**
-   - Read `backend/controllers/claimController.js`:
-     - `analyzeClaim` – follow **every step**:
-       - Validate file.
-       - Parse form JSON.
-       - Read file from disk.
-       - Build FormData for Hugging Face.
-       - Call FastAPI.
-       - Save `Claim` in Mongo.
-       - Return `claimId` + `report`.
-     - `explainClaim` – how it:
-       - Loads the claim.
-       - Builds a Gemini prompt.
-       - Returns natural-language `answer`.
-     - `getAllClaims`, `getClaimById`.
-   - Read `backend/routes/claimRoutes.js`:
-     - Map each route → controller.
+#### Promises and async/await
+```javascript
+// These 3 are equivalent:
+fetch('/api/claims')
+  .then(res => res.json())
+  .then(data => console.log(data))
+  .catch(err => console.error(err));
 
-5. **Study Gemini config**
-   - Read `backend/config/gemini.js`:
-     - How the keys are loaded.
-     - How `getNextGeminiModel` rotates between keys.
+// vs async/await (what you use in CrashCost):
+const res = await fetch('/api/claims');
+const data = await res.json();
 
-Outcome: You can explain “when the frontend calls `/api/segment-car`, which files on the backend run, and what they do step-by-step?”
+// What happens if you forget await?
+const res = fetch('/api/claims');  // res is a Promise object, not the response!
+```
 
----
+#### Event Loop
+```javascript
+console.log('1');
+setTimeout(() => console.log('2'), 0);  // Queued in task queue
+Promise.resolve().then(() => console.log('3'));  // Queued in microtask queue
+console.log('4');
 
-Phase 3 – Connect Frontend and Backend in Your Head (Days 8–9)
---------------------------------------------------------------
+// Output: 1, 4, 3, 2
+// Why: Call stack runs 1 and 4 first. Microtasks (Promise) run before
+// task queue (setTimeout) even if setTimeout is 0ms.
+```
+This is why your `async/await` calls in Express controllers work correctly — Node's event loop handles them without blocking other requests.
 
-**Goal:** See the **full data flow** clearly.
+#### Array Methods (Write these from scratch)
+```javascript
+const detections = [
+  { label: 'DENT', price: 5000, severity: 'SEVERE' },
+  { label: 'CRACK', price: 3000, severity: 'MODERATE' },
+  { label: 'SCRATCH', price: 1000, severity: 'MINOR' }
+];
 
-1. **Re-read `PROJECT_DOCUMENTATION.md`**
-   - Now that you’ve seen the code, this document will make more sense.
-   - Focus on:
-     - Section about **Main User Journeys**.
-     - Section about **How frontend and backend agree on data**.
+// map: transform each element
+const prices = detections.map(d => d.price);         // [5000, 3000, 1000]
 
-2. **Draw your own diagram**
-   - On paper or in a notebook:
-     - Draw boxes for:
-       - Landing → Dashboard → Analytics → XAI Lab.
-       - Backend routes.
-       - MongoDB.
-       - Hugging Face.
-       - Gemini.
-     - Draw arrows showing:
-       - Which endpoint each page calls.
-       - What data moves along that arrow (e.g. `FormData(image, vehicleDetails, incidentDetails)`).
+// filter: keep matching elements
+const severe = detections.filter(d => d.severity === 'SEVERE');  // [DENT obj]
 
-3. **Trace two full journeys with code open**
-   - Journey A: **Submit new claim**
-     - Start at `DashboardPage.jsx` → `handleAnalyze` → `claimRoutes` → `analyzeClaim` → `Claim` model → response → `AssessmentReport`.
-   - Journey B: **Ask AI in XAI Lab**
-     - Start at `XaiLabPage.jsx` → `handleAskGemini` → `/api/explain` → `explainClaim` + `gemini.js` → response → chat UI update.
+// reduce: accumulate to a single value
+const total = detections.reduce((sum, d) => sum + d.price, 0);  // 9000
 
-Outcome: You should be able to explain the full system to a friend without looking at the code.
+// find: first match
+const crack = detections.find(d => d.label === 'CRACK');  // CRACK obj
 
----
+// flatMap: map then flatten (used in analyticsPage)
+const allDrivers = claims.flatMap(c => c.aiReport.detections);
+```
 
-Phase 4 – Small Practice Changes (Days 10–12)
----------------------------------------------
-
-**Goal:** Get comfortable editing the project without breaking it.
-
-Pick 2–3 **small, safe tasks** like:
-
-1. **Frontend UI tweaks**
-   - Change colors or text in `LandingPage`.
-   - Add a new tip in the Dashboard “Quick Tips” card.
-   - Add one more suggested question in XAI Lab.
-
-2. **New read-only page**
-   - Create a `HelpPage` under `src/pages/`.
-   - Add route `/help` in `App.jsx`.
-   - Show simple text: how to use the app, what AI does, etc.
-   - Link to it from `Navbar` or `Sidebar`.
-
-3. **Show more claim info in Analytics table**
-   - In `analyticsPage.jsx`, add one more column:
-     - Example: show `vehicleDetails.damageLocation`.
-   - Make sure it still looks good on mobile.
-
-Each time:
-- Make a change.
-- Run frontend + backend.
-- Manually test in the browser.
-
-Outcome: You gain **confidence** that you can touch the code and understand what is happening.
+**Practice:** Every day, open your `analyticsPage.jsx` and re-read the derived state calculations. You already wrote `flatMap`, `reduce`, and `filter` — explain each one out loud.
 
 ---
 
-Phase 5 – Medium Features (Days 13–18)
---------------------------------------
+### Week 2: React Internals
 
-**Goal:** Build features that use both frontend and backend logic.
+#### Virtual DOM & Reconciliation
+React maintains a lightweight copy of the DOM in memory (the Virtual DOM). When state changes, React:
+1. Creates a new Virtual DOM
+2. Diffs it against the old one (reconciliation — uses fiber algorithm)
+3. Calculates the minimal set of real DOM changes needed
+4. Applies only those changes (commit phase)
 
-Choose 1–2 of these:
+This is why React is fast — it batches DOM writes instead of making one per state change.
 
-1. **Protect more backend routes with auth**
-   - Currently `/api/claims` and `/api/explain` are not protected.
-   - Add `authMiddleware` to these routes in `claimRoutes.js`.
-   - On frontend, make sure `Authorization` header is set for these requests (using `AuthContext` / `axios` or `fetch` + token).
+**Why you need to know this for interviews:** "Why is React better than vanilla JS?" → Virtual DOM + reconciliation is the answer.
 
-2. **Add a “My Profile” page**
-   - Backend:
-     - Add `GET /api/me` that:
-       - Uses `authMiddleware`.
-       - Returns current user from `req.user`.
-   - Frontend:
-     - Add `ProfilePage` that calls `/api/me` and shows:
-       - User name, email.
-       - Number of claims (maybe reuse `/api/claims?userId=`).
+#### Why `useEffect` Dependencies Matter
+```javascript
+// In analyticsPage.jsx:
+useEffect(() => {
+  fetchClaims();    // GET /api/claims
+}, [user]);         // Re-runs ONLY when user object changes
 
-3. **Better error handling on frontend**
-   - In `DashboardPage`, if `/api/segment-car` fails:
-     - Show a nice error card instead of just `alert`.
-   - In Analytics/XAI Lab:
-     - If `/api/claims` fails, show a “Server offline” message.
+// What happens if you put nothing?
+useEffect(() => {
+  fetchClaims();    // Runs ONCE after component mounts
+}, []);
 
-Outcome: You practice **full-stack changes**: touching models/controllers/routes + React pages/components.
+// What happens if you omit the array?
+useEffect(() => {
+  fetchClaims();    // Runs after EVERY render — will cause infinite loop if fetchClaims updates state
+});
+```
 
----
+**Your real example:** In `AuthContext.jsx`, the `useEffect` with `[]` runs once on mount to read from localStorage. Perfect use case.
 
-Phase 6 – Advanced / Portfolio Upgrades (Optional, Days 19+)
-------------------------------------------------------------
+#### Controlled vs Uncontrolled Inputs
+```javascript
+// Controlled (what you use in the wizard):
+const [value, setValue] = useState('');
+<input value={value} onChange={e => setValue(e.target.value)} />
+// React controls the input value. The source of truth is React state.
 
-**Goal:** Turn this into a “killer” portfolio project.
+// Uncontrolled (using ref):
+const inputRef = useRef();
+<input ref={inputRef} />
+// DOM controls the value. React just has a reference to the DOM node.
+```
 
-Some ideas:
+#### `useMemo` and `useCallback`
+```javascript
+// useMemo: cache an expensive computation
+const damageChartData = useMemo(() => {
+  return claims.flatMap(c => c.aiReport.detections)
+    .reduce((acc, d) => { /* count by label */ }, {});
+}, [claims]);  // Only recalculate when claims array changes
 
-1. **PDF export of AI report**
-   - Frontend:
-     - Add a button “Download Report as PDF” in `AssessmentReport`.
-   - Use a library (like `jspdf`) or call a backend endpoint that returns a PDF.
+// useCallback: cache a function reference
+const handleAnalyze = useCallback(async () => {
+  // ... fetch logic
+}, [claimData]);  // Only recreate function when claimData changes
+```
 
-2. **Admin view**
-   - Add a `role` field to `User` (`user` / `admin`).
-   - Create an admin-only route:
-     - `GET /api/admin/claims` (all claims).
-   - Create an `AdminDashboard` on frontend showing:
-     - All claims.
-     - Filter by user, date range, severity, etc.
-
-3. **Better security and data ownership**
-   - Ensure a normal user can **only** access their own claims on the backend:
-     - For `/api/claims`, ignore `userId` from query and use `req.user.id` instead.
-   - Hide any sensitive data from responses.
-
-4. **Testing**
-   - Add Jest tests / supertest integration tests for:
-     - Auth routes.
-     - Claim routes (mocking HF and Gemini).
-
-Outcome: These upgrades impress interviewers and give you deeper backend + system-design confidence.
+Your `analyticsPage.jsx` recomputes all charts on every render because calculations are inline. This is fine at your scale but worth knowing for interviews.
 
 ---
 
-How to Use This Roadmap
------------------------
+### Week 3: Node.js & Express Internals
 
-- Don’t rush. Even if you stretch it over **a month**, it’s okay.
-- Focus on **understanding**, not just reading:
-  - After each phase, try to **explain the system out loud** or on paper.
-- Use the other docs as your reference:
-  - `PROJECT_DOCUMENTATION.md` → big picture.
-  - `FRONTEND_DOCUMENTATION.md` → React-side details.
-  - `BACKEND_DOCUMENTATION.md` → Node/Express/Mongo/AI details.
+#### How Node Handles Multiple Requests
+Node.js is single-threaded. It uses a non-blocking I/O model:
+- When Express receives a request, it starts handling it
+- When it hits `await Claim.findById(id)` (a MongoDB query), Node doesn't wait
+- Instead, Node moves on to handle the next incoming request
+- When MongoDB finishes, Node's event loop picks up the callback and continues
 
-If you follow this roadmap, by the end you will:
-- Understand a real **production-style** MERN + AI system front-to-back.
-- Be able to **confidently modify and extend** the project.
-- Be ready to **talk about this project** in interviews like a strong engineer.
+This is why your Express server can handle multiple users at once despite being single-threaded. The bottleneck is CPU-bound work (which you offload to HF), not I/O.
 
+#### Middleware Chain in Detail
+Every Express middleware `(req, res, next)` works like a pipeline:
+```
+Request comes in
+      ↓
+cors() middleware — adds headers, blocks if origin not allowed
+      ↓
+express.json() — parses body if Content-Type: application/json
+      ↓
+aiLimiter — checks request count, blocks if over limit
+      ↓
+router.post('/segment-car', protect, upload.single('image'), analyzeClaim)
+      ↓
+protect() — verifies JWT, sets req.user, calls next() or sends 401
+      ↓
+upload.single('image') — multer reads multipart body, saves file, calls next()
+      ↓
+analyzeClaim() — your controller
+```
+
+If any middleware sends a response without calling `next()`, the chain stops there.
+
+#### Error Handling Middleware (you're missing this)
+```javascript
+// 4-parameter middleware — Express knows this is an error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.statusCode || 500).json({
+    message: err.message || 'Server Error'
+  });
+});
+```
+Right now your CrashCost backend has try/catch blocks in every controller. A centralized error handler is cleaner. Add this to `server.js` as a future improvement.
+
+---
+
+### Week 4: MongoDB & Mongoose Deeply
+
+#### Understand Your Claim Schema
+The nested `detections` array inside `aiReport` is an embedded document pattern.
+
+**When to embed:** When data is always read/written together (a detection never exists without its claim)
+
+**When to reference:** When you need to query the sub-document independently. For example, if we needed a "search by detection label" feature, we'd reference instead.
+
+#### Aggregation Pipeline (Write this for interviews)
+```javascript
+// "How many claims per severity for user X?"
+const stats = await Claim.aggregate([
+  { $match: { userId: mongoose.Types.ObjectId(userId) } },
+  { $unwind: '$aiReport.detections' },
+  { $group: {
+    _id: '$aiReport.detections.severity',
+    count: { $sum: 1 },
+    totalCost: { $sum: '$aiReport.detections.price' }
+  }},
+  { $sort: { count: -1 } }
+]);
+```
+
+This is what a real analytics endpoint would look like. Your current `/api/claims` returns raw arrays and the frontend does the grouping — not ideal for large datasets.
+
+#### Indexes
+```javascript
+// In User.js, email has unique: true — Mongoose auto-creates an index.
+// Indexes speed up queries on that field by avoiding full collection scans.
+
+// If you add this to your Claim model:
+ClaimSchema.index({ userId: 1, createdAt: -1 });
+// Now queries for a user's claims sorted by date are instant, even with 1M docs
+```
+
+---
+
+## Month 2 — Placement Preparation
+
+### Week 5: Data Structures & Algorithms
+
+You need this to pass the first technical screening at most companies.
+
+**Target:** 50 LeetCode Easy problems solved in JavaScript by end of this week. That's 7/day.
+
+**Most important patterns for MERN placements:**
+
+| Pattern | LeetCode Problems | Why It Comes Up |
+|---|---|---|
+| Two Pointers | Valid Palindrome, Container with Water | Array manipulation |
+| Sliding Window | Max Subarray, Longest Substring | String/array problems |
+| Hash Map | Two Sum, Group Anagrams, Contains Duplicate | All interviewers love these |
+| Binary Search | Search in Rotated Array, Find Peak Element | Efficiency questions |
+| BFS/DFS | Number of Islands, Clone Graph | Anything tree/graph shaped |
+| Recursion | Fibonacci, Subsets, Permutations | Fundamental thinking |
+
+**Your IoU deduplication algorithm IS an example of computational geometry.** You already coded this:
+```javascript
+const interArea = Math.max(0, xb - xa) * Math.max(0, yb - ya);
+const iou = interArea / (areaA + areaB - interArea);
+```
+Be ready to explain what IoU means and why you derived it this way.
+
+---
+
+### Week 6: System Design Fundamentals
+
+For MERN developer roles at product companies (Zepto, Razorpay, Meesho, etc.), expect 1-2 system design questions.
+
+**Designs to prepare based on your project:**
+
+#### "Design the CrashCost AI Pipeline"
+Draw this confidently:
+```
+Client → CDN (Vercel) → Load Balancer → Express API (Render)
+                                               ↓
+                                      Rate Limiter (Redis in prod)
+                                               ↓
+                                      Message Queue (Bull/Redis) ← async
+                                               ↓
+                                      AI Worker Service (HF/GPU)
+                                               ↓
+                                      MongoDB Atlas
+```
+
+**Improvements you can propose:**
+- Replace synchronous HF call (current) with async job queue (Bull) so the user doesn't wait 30s
+- Redis for caching repeat claim analyses on same vehicle/damage combo
+- S3 for storing original uploaded images (currently deleted after processing)
+
+#### "Design a Secure Authentication System"
+You built this. Talk through:
+- bcrypt hashing (why not MD5? — not reversible vs reversible)
+- JWT (why stateless? — no server-side session storage needed, scales horizontally)
+- JWT expiry (30 days) + token refresh (you haven't implemented refresh yet)
+- CORS + HTTPS (you did implement both)
+- Rate limiting on auth endpoints (you haven't added this — a good answer for "what would you improve?")
+
+#### HTTP Status Codes You Must Know Cold
+| Code | Meaning | Your usage |
+|---|---|---|
+| 200 | OK | All successful API responses |
+| 201 | Created | Should be on /register and /segment-car success |
+| 400 | Bad Request | No image uploaded |
+| 401 | Unauthorized | Invalid/missing JWT |
+| 403 | Forbidden | CORS origin not allowed |
+| 404 | Not Found | Claim not in MongoDB |
+| 429 | Too Many Requests | Rate limiter triggered |
+| 500 | Internal Server Error | Unhandled exceptions |
+| 504 | Gateway Timeout | HF cold start timeout |
+
+---
+
+### Week 7: Interview Talking Points (Your Strongest Asset)
+
+CrashCost V2 is genuinely impressive for a placement candidate. Every interviewer will ask you to walk them through it. Prepare these answers:
+
+#### "Tell me about your most challenging project"
+**Template answer:**
+> "I built CrashCost V2 — an AI-powered automobile damage assessment system. The user uploads a photo of car damage and gets an instant repair cost estimate in Indian Rupees. The system uses three AI models in a pipeline: YOLOv11 for damage detection, CLIP for surface material classification, and CatBoost for cost regression. I built the full stack — React frontend on Vercel, Node.js Express API on Render, MongoDB Atlas for storage, and Hugging Face for the AI compute. One of the hardest problems I solved was that YOLO was outputting duplicate bounding boxes for the same damage, inflating the cost 2-3x. I implemented an IoU-based deduplication filter in the backend that removes boxes where more than 30% of the area overlaps another box of the same class, then recalculates the total."
+
+#### "What was the hardest bug you fixed?"
+**The Vercel white screen answer:**
+> "When I deployed to Vercel, the site showed a completely blank white page even though the build succeeded. The browser console showed a MIME type error — the server was returning HTML when the browser expected JavaScript for the main bundle. I traced it to the `vercel.json` routing config. I was using `routes` which intercepts ALL requests including requests for static JS files and returns `index.html` (HTML) instead. The fix was switching to `rewrites` which only acts as a fallback when no static file exists on disk, so JS bundles are served correctly while React Router routes still fall back to index.html."
+
+#### "How did you handle authentication?"
+> "I used the standard JWT pattern. On registration, passwords are hashed with bcrypt (10 salt rounds). On login, I compare the input password against the stored hash. If they match, I sign a JWT with the user's MongoDB ObjectId and a 30-day expiry using a secret key stored in environment variables. The frontend stores this token in localStorage and sends it as a Bearer token header on every API call. The backend has an authMiddleware that verifies the JWT signature and attaches the decoded user to req.user before the controller runs."
+
+#### "What would you improve if you had more time?"
+> "Three things: First, protect all GET /api/claims routes with JWT so users can only see their own data — right now those are public. Second, replace the synchronous Hugging Face API call with an async job queue using Bull and Redis so the user gets a pending status immediately instead of waiting 30-90 seconds. Third, add a comprehensive test suite with Jest and React Testing Library — I have zero automated tests right now which is a clear gap for production readiness."
+
+---
+
+### Week 8: Mock Interviews + Final Review
+
+**Do only this in week 8:**
+
+1. **Morning:** 3 LeetCode problems in JavaScript (aim for Medium now)
+2. **Afternoon:** 1 mock interview (use Pramp.com — it's free and live)
+3. **Evening:** Re-read your project code. Pick one file per day and explain EVERY line to yourself.
+
+**Files to prioritize for re-reading:**
+- `claimController.js` — the IoU algorithm, the FormData building, the MongoDB save
+- `authMiddleware.js` — the middleware chain, jwt.verify, req.user
+- `AuthContext.jsx` — localStorage, axios defaults, the login/logout cycle
+- `server.js` — the exact middleware order and why each piece is there
+
+---
+
+## Quick Reference: Things Interviewers Ask About MERN
+
+| Question | Answer Points |
+|---|---|
+| "What is the event loop?" | Call stack → microtask queue (Promises) → task queue (setTimeout) |
+| "REST vs GraphQL" | REST: multiple endpoints, fixed structure. GraphQL: one endpoint, client specifies exactly what data it needs |
+| "What is middleware?" | Functions in Express that handle req/res before the controller. Can modify req, res, or call next() |
+| "SQL vs NoSQL" | SQL: structured table/row, relations, ACID. NoSQL: Document/key-value, flexible schema, horizontal scale |
+| "What is a JWT?" | Signed token = base64(header) + base64(payload) + signature. Stateless — server doesn't store session |
+| "What is bcrypt?" | One-way hash function for passwords. Can't reverse. compare() verifies without storing original |
+| "What is CORS?" | Browser security: blocks requests to a different domain unless that domain explicitly allows it |
+| "Virtual DOM vs Real DOM?" | Virtual DOM is a JS object representation. React diffs it and only writes necessary real DOM changes |
+| "Why hooks instead of classes?" | Simpler mental model, easier to share logic (custom hooks), no `this` confusion |
+| "What is useEffect?" | Side effect runner. Runs after render. Dependencies array controls when it re-runs |
+
+---
+
+## Resources (Minimal — Only the Best)
+
+| Resource | Purpose |
+|---|---|
+| [javascript.info](https://javascript.info) | Best JS fundamentals reference anywhere |
+| [NeetCode.io](https://neetcode.io) | Structured DSA practice with video explanations |
+| [react.dev](https://react.dev) | Official React docs — read the "Thinking in React" guide |
+| [ByteByteGo YouTube](https://youtube.com/@ByteByteGo) | System design concepts for free |
+| [Pramp.com](https://pramp.com) | Free live mock interviews (peer-to-peer) |
+
+---
+
+## Stop Doing This
+
+- ❌ Building new projects instead of deeply understanding CrashCost V2
+- ❌ Watching tutorials while feeling productive (you're not writing code)
+- ❌ Skipping DSA because "I'm a web dev" — every company tests it
+- ❌ Not reading error messages fully — they always tell you exactly what's wrong
+- ❌ Using AI to write code you don't understand — you won't be able to explain it

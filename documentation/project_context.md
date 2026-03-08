@@ -1,696 +1,589 @@
-Project Context: InsureVision3 (Current Architecture – March 2026)
-==================================================================
-
-This file is the **engineering “source of truth”** for how the InsureVision3 / CrashCost system currently works.
-
-You should read this when you want to:
-- Understand **how the whole system fits together**.
-- Quickly recall **which file does what**.
-- See **how data flows** from the browser → backend → AI engines → MongoDB → back to the browser.
-
-This document is written for a **3rd year B.Tech CSE student with intermediate MERN experience**.
-
----
-
-1) What This Repository Is
---------------------------
-
-**InsureVision3** is a **full‑stack MERN-style AI application** for automobile damage claims.
-
-At a high level:
-- A driver logs in.
-- They go to the **dashboard**, enter vehicle + incident details, and upload a photo.
-- The backend sends this photo + metadata to a **CrashCost AI engine** hosted on Hugging Face (FastAPI).
-- The AI engine returns:
-  - A **total repair estimate**.
-  - A **range** (min / max cost).
-  - A list of **detections** (e.g. “FRONT_BUMPER_DENT, SEVERE, 92% confidence, ₹18,000”).
-- The backend saves this result in **MongoDB** as a `Claim`.
-- The frontend then:
-  - Shows a beautiful **assessment report**.
-  - Adds the claim to your **Analytics** page (history + charts).
-  - Lets you open the **XAI Lab**, where Gemini explains *why* the AI predicted those damages and costs.
-
-So the system has **three main “brains”**:
-- The **CrashCost AI Engine** (YOLO + CLIP + CatBoost) on Hugging Face → does **vision + cost estimation**.
-- **MongoDB** → remembers all claims, vehicles, and AI reports.
-- **Gemini 2.5 Flash** → provides natural‑language **explanations** (Explainable AI).
-
----
-
-2) Repository Layout (High Level)
----------------------------------
-
-Top level of `InsureVision3/`:
-
-- `backend/` – Node.js + Express API server
-  - Handles **auth**, **claims**, **Hugging Face calls**, **Gemini calls**, and **MongoDB**.
-- `frontend/` – React + Vite single-page app
-  - All UI (landing, dashboard, analytics, XAI lab) + global auth and theme.
-- `README.md` – Light setup notes (some structure details are generic).
-- `LOGIN_INSTRUCTIONS.md` – How to run and which test credentials to use.
-- `ERROR_LOG.md` – Notes from debugging earlier auth issues.
-- `project_context.md` – **This file** (engineering architecture context).
-- Misc:
-  - `download.py`, `test_images/` – Scripts + images for generating test data.
-
-### Backend structure
-
-Under `backend/`:
-
-- `server.js` – Main entry point. Creates Express app, connects MongoDB, mounts routes, sets rate limits.
-- `models/`
-  - `Claim.js` – Full schema for one saved damage claim.
-  - `User.js` – Schema for registered users (name, email, password).
-- `controllers/`
-  - `claimController.js` – Business logic for:
-    - `analyzeClaim` (image → HF engine → save in DB).
-    - `explainClaim` (load claim → ask Gemini → explanation).
-    - `getAllClaims`, `getClaimById`.
-  - `authController.js` – Register & login, JWT generation, special test user fallback.
-- `middleware/`
-  - `authMiddleware.js` – Verifies JWT, attaches `req.user`.
-- `routes/`
-  - `claimRoutes.js` – `/api/segment-car`, `/api/explain`, `/api/claims`, `/api/claims/:id`.
-  - `authRoutes.js` – `/api/auth/register`, `/api/auth/login`.
-  - `index.js` – Simple `/test` route (currently **not** mounted in `server.js`).
-- `config/`
-  - `gemini.js` – Multi‑key Gemini configuration + round‑robin key rotation.
-- Scripts / tools:
-  - `verifyKeys.js` – CLI to test your Gemini API keys.
-  - `submit_test_claims.js` – Script to log in and submit multiple sample claims.
-
-### Frontend structure
-
-Under `frontend/`:
-
-- `src/main.jsx` – React entry file. Renders `<App />`.
-- `src/App.jsx` – Defines all routes:
-  - `/` → `LandingPage`
-  - `/dashboard` → `DashboardPage`
-  - `/analytics` → `AnalyticsPage`
-  - `/xai-lab` → `XaiLabPage`
-- `src/pages/`
-  - `landingPage.jsx` – Interactive landing + marketing.
-  - `dashboardPage.jsx` – Claim wizard + AI analyze + report.
-  - `analyticsPage.jsx` – Real analytics from MongoDB.
-  - `xaiLabPage.jsx` – Gemini XAI chat UI.
-- `src/context/`
-  - `AuthContext.jsx` – Global auth state (user + token, login, register, logout).
-  - `ThemeContext.jsx` – Dark / light theme (adds `dark` class on `<html>`).
-- `src/components/`
-  - `Sidebar.jsx` – Left navigation used on dashboard/analytics/XAI pages.
-  - `Navbar.jsx` – Top navbar used on landing.
-  - `AuroraBackground.jsx` – 3D / animated background.
-  - `AuthModal.jsx` – Radix-based login / register modal.
-  - `ui/glowing-effect.jsx` – Reusable glowing border effect.
-- `src/services/api.js` – API helper (fetch wrapper – currently only used by a test component).
-- `src/controllers/useApi.js` – `useApi` hook around the API helper.
-- `src/index.css`, `tailwind.config.js`, `postcss.config.js` – Styling system.
-- `vite.config.js` – Vite config + **dev-time `/api` proxy** to the backend.
-
----
-
-3) Tech Stack and Important Dependencies
-----------------------------------------
-
-### Backend (Node + Express + MongoDB + AI)
-
-Key technologies:
-- **Express** – HTTP server and routing.
-- **Mongoose** – ODM to talk to MongoDB (schemas + models).
-- **Multer** – Handles file uploads (`multipart/form-data`), writes to `uploads/`.
-- **Axios** + **FormData** – Used to call the CrashCost **FastAPI** endpoint on Hugging Face.
-- **@google/generative-ai** – Gemini SDK for XAI explanations.
-- **bcryptjs** – Password hashing.
-- **jsonwebtoken** – JWT-based authentication.
-- **express-rate-limit** – Protects `/api/segment-car` and `/api/explain` from abuse.
-- **cors**, **dotenv**, etc.
-
-### Frontend (React + Vite + Tailwind)
-
-Key technologies:
-- **React** 19 – Component library.
-- **React Router** 7 – SPA routing.
-- **Tailwind CSS** – Utility-first styling.
-- **Framer Motion** – Animations.
-- **Lucide React** – Icon set.
-- **Recharts** – Analytics charts.
-- **@react-three/fiber`, `three`, `@react-three/drei`** – 3D backgrounds.
-
-Dev tooling:
-- **Vite** – Fast dev server + bundler.
-- **ESLint** (flat config) – Linting for React and hooks.
-
----
-
-4) End-to-End Product Flow (Step by Step)
------------------------------------------
-
-### 4.1 Authentication flow
-
-1. **User opens the app** at `/`.
-2. The landing page navbar can open the **Auth modal** (`AuthModal.jsx`).
-3. When the user logs in or registers:
-   - Frontend calls:
-     - `POST /api/auth/register` with `{ name, email, password }`, OR
-     - `POST /api/auth/login` with `{ email, password }`.
-   - On success, the backend returns:
-     - `_id`, `name`, `email`, `token` (JWT).
-   - `AuthContext`:
-     - Stores this `user` and `token` in **React state**.
-     - Persist them to `localStorage`.
-     - Sets `axios.defaults.headers.common['Authorization'] = 'Bearer <token>'`.
-4. Pages that require auth (`/dashboard`, `/analytics`, `/xai-lab`) check `user` from `AuthContext`:
-   - If `user` is `null`, they **redirect** to `/` using `<Navigate>`.
-
-On the backend:
-- JWTs are created in `authController.js` using `JWT_SECRET` (with a default dev secret if missing).
-- `authMiddleware.js` checks `Authorization: Bearer <token>`, verifies the token, loads the user from Mongo, and attaches it to `req.user`.
-
-### 4.2 Claim creation (Dashboard → CrashCost AI → MongoDB)
-
-On the **Dashboard page** (`dashboardPage.jsx`):
-
-1. The user completes a **multi-step wizard**:
-   - Step 1: Vehicle details (`brand`, `model`, `tier`, `segment`, `car_age`, `car_model_val`, `damageLocation`, optional `vin`).
-   - Step 2: Incident details (`date`, `description`).
-   - Step 3: Upload one or more photos.
-   - Step 4: Review summary.
-   - Step 5: Analyze (shows spinner → then AI results).
-2. For uploads:
-   - React stores both:
-     - A **preview URL** for the image.
-     - The raw `File` object (`rawFile`).
-3. When the user clicks **Analyze**:
-   - `handleAnalyze` builds a `FormData`:
-     - `image` → first uploaded image file (`rawFile`).
-     - `vehicleDetails` → JSON string of vehicle details.
-     - `incidentDetails` → JSON string of incident details.
-   - It reads the JWT from `localStorage` and calls:
-     - `POST /api/segment-car` with:
-       - Headers: `Authorization: Bearer <token>`.
-       - Body: the `FormData` (no `Content-Type` header – the browser sets it).
-
-On the **backend** (`claimController.analyzeClaim` in `backend/controllers/claimController.js`):
-
-1. `multer` (configured in `server.js`) has already:
-   - Parsed the `multipart/form-data`.
-   - Written the image to a temporary file under `uploads/`.
-2. In `analyzeClaim`:
-   - It validates that `req.file` is present (otherwise returns 400).
-   - Parses:
-     - `vehicleDetails = JSON.parse(req.body.vehicleDetails || "{}")`.
-     - `incidentDetails = JSON.parse(req.body.incidentDetails || "{}")`.
-   - Reads the image into memory: `fs.readFileSync(req.file.path)`.
-   - Builds a new `FormData` object for the **Hugging Face FastAPI endpoint**:
-     - `image` buffer with filename + mimetype.
-     - `brand`, `tier`, `segment`, `location`, `age` fields, derived from `vehicleDetails`.
-   - Sends this to:
-     - `HF_API_URL = "https://saimanideep-crashcost-ai-engine.hf.space/api/v1/audit"`.
-   - Waits for the JSON response:
-     - Contains `total_estimate`, `estimate_range`, `context`, `detections`.
-   - Deletes the temp file from `uploads/`.
-   - Creates a new `Claim` document:
-     - `userId` is set from `req.user?.id` (if auth middleware attached a user).
-     - `vehicleDetails` is a copy of what the frontend sent (with some normalization).
-     - `incidentDetails` as provided.
-     - `aiReport` takes the fields from the HF response.
-   - Saves the claim in MongoDB.
-   - Returns JSON:
-     - `{ success: true, message: "AI analysis complete", claimId, report }`.
-
-Back on the **frontend**:
-- The dashboard receives `{ success, claimId, report }`:
-  - Stores `report` in state.
-  - Stores `claimId` separately.
-  - Switches to the **Assessment report** step, passing both `report` and `claimId`.
-- `AssessmentReport` displays:
-  - Total estimate.
-  - Range.
-  - Each detection with label, severity, confidence, surface, ratio, cost, SHAP drivers.
-  - An **“Explain Logic”** button that navigates to `/xai-lab?claimId=<claimId>`.
-
-### 4.3 Analytics (History + Charts)
-
-On the **Analytics page** (`analyticsPage.jsx`):
-
-1. The page is **protected** by auth. If `!user`, it redirects to `/`.
-2. On mount, it fetches the user’s claims:
-   - `GET /api/claims?userId=<user._id or user.id>`.
-   - Stores the array in state.
-3. It computes:
-   - `totalClaims` – number of claims.
-   - `allDetections` – flattening all `aiReport.detections`.
-   - `avgConfidence` – average confidence across all detections.
-   - `totalCost` – sum of all `aiReport.total_estimate`.
-   - `damageChartData` – counts per detection label for bar chart.
-   - `severityChartData` – counts per severity for pie chart.
-4. It renders:
-   - Top **stat cards** (total claims, avg confidence, total estimated cost).
-   - **Bar chart** (damage type distribution) using Recharts.
-   - **Pie chart** (severity distribution) using Recharts.
-   - A **history table**:
-     - Each row = one claim.
-     - “Report” button expands inline to show all detections.
-     - “Ask AI” button opens an inline chat box for that claim.
-
-The **inline chat** there calls:
-- `POST /api/explain` with `{ claimId, message }` and shows the Gemini answer.
-
-### 4.4 XAI Lab (Deep Explainable AI)
-
-On the **XAI Lab page** (`xaiLabPage.jsx`):
-
-1. The page is **protected** by auth.
-2. It reads `claimId` from the URL:
-   - `const initialClaimId = searchParams.get('claimId');`
-3. On mount, it loads the user’s claims:
-   - `GET /api/claims?userId=<user._id or user.id>`.
-4. The user can:
-   - Select a claim from a dropdown.
-   - Or arrive with `?claimId=...` and have it pre-linked.
-5. The chat state is stored in an array of `{ role, text }` messages.
-6. When the user asks a question:
-   - If no claim is selected, Gemini replies with a warning message.
-   - Otherwise:
-     - Adds the user message to the chat.
-     - Calls `POST /api/explain` with `{ claimId, message }`.
-     - Appends Gemini’s answer to the chat.
-7. The right panel shows:
-   - A **summary of the selected claim** (vehicle, tier, segment, location, total estimate).
-   - A **list of detections** with severity and confidence.
-   - Suggested prompts like “Why was this classified as SEVERE?”.
-
-On the backend (`claimController.explainClaim`):
-
-1. Reads `{ claimId, message }` from the body.
-2. Looks up the `Claim` in MongoDB.
-3. Calls `getNextGeminiModel()` to get a Gemini client with the next API key.
-4. Builds a rich text `prompt` using:
-   - Vehicle details.
-   - Incident description.
-   - Total estimate and range.
-   - A bullet list of detections with severity, prices, and summaries.
-   - The user’s question.
-5. Calls `model.generateContent(prompt)` and returns `{ answer: text }`.
-
----
-
-5) Backend Architecture (Detailed)
-----------------------------------
-
-### 5.1 `backend/server.js` – App bootstrap
-
-**Key responsibilities:**
-- Load environment variables via `dotenv`.
-- Create the Express app.
-- Enable `cors`.
-- Enable JSON + URL-encoded body parsing.
-- Create and configure `uploads/` folder for Multer.
-- Set up **rate limiting** for expensive endpoints.
-- Connect to **MongoDB** using `MONGO_URI`.
-- Mount all routes under `/api` and `/api/auth`.
-- Expose `GET /healthz` for health checks.
-
-Important points:
-- Rate limiting:
-  - Uses `express-rate-limit` to limit requests to `/api/segment-car` and `/api/explain`.
-  - Protects the Hugging Face and Gemini quotas from being spammed.
-- `app.set('trust proxy', 1)` is usually enabled in production so that rate limiting uses the real client IP behind a proxy (e.g. Render’s load balancer).
-- MongoDB:
-  - Uses `process.env.MONGO_URI`.
-  - If the connection fails, the server logs errors; for local "student mode" the code is written to keep things as smooth as possible.
-
-### 5.2 Models
-
-#### Claim model (`backend/models/Claim.js`)
-
-Defines **one document per saved claim**:
-
-- `userId` – `ObjectId` referencing `User` (may be null for older claims).
-- `vehicleDetails` – nested object:
-  - `vin`: string.
-  - `model`: string.
-  - `year`: string.
-  - `make`: string.
-  - `brand`: string.
-  - `tier`: `'budget' | 'mid' | 'premium' | 'luxury'`.
-  - `segment`: `'hatchback' | 'sedan' | 'suv' | 'compact_suv'`.
-  - `damageLocation`: `'front' | 'rear' | 'side' | 'top'`.
-  - `car_model_val`: number (₹ market value).
-  - `car_age`: number (years).
-- `incidentDetails`:
-  - `date`: `Date`.
-  - `description`: string.
-- `aiReport`:
-  - `total_estimate`: number.
-  - `estimate_range`: `[min, max]`.
-  - `context`:
-    - `brand`, `tier`, `segment`, `location`.
-  - `detections`: array of:
-    - `id`: number.
-    - `label`: string (e.g. `FRONT_BUMPER_DENT`).
-    - `confidence`: number (0–1).
-    - `surface_detected`: string (e.g. `metal`).
-    - `severity`: string (`MINOR`, `MODERATE`, `SEVERE`).
-    - `ratio`: number (damage area ratio).
-    - `bbox`: mixed (bounding box coordinates).
-    - `price`: number (₹).
-    - `drivers`: string[] (SHAP-style feature names).
-    - `summary`: short explanation.
-    - `narrative`: longer text.
-- `status`: default `"Auto-Assessed"`.
-- Timestamps: `createdAt`, `updatedAt`.
-
-#### User model (`backend/models/User.js`)
-
-- Fields:
-  - `name`: string, required.
-  - `email`: string, required, unique.
-  - `password`: string, required (hashed).
-- Timestamps enabled.
-
-### 5.3 Controllers and routes
-
-#### Auth (`backend/controllers/authController.js` + `routes/authRoutes.js`)
-
-Endpoints:
-- `POST /api/auth/register`:
-  - Validates `name`, `email`, `password`.
-  - Checks if the user already exists.
-  - Hashes password with bcrypt.
-  - Creates a new `User` in MongoDB.
-  - Returns `{ _id, name, email, token }`.
-  - If the DB is unavailable in “student mode”, it can still return a mock user to keep the UI working.
-- `POST /api/auth/login`:
-  - Special-case: `test@test.com` / `password` returns a test user with a JWT without hitting the DB.
-  - Otherwise:
-    - Finds the user by email.
-    - Compares the password with the bcrypt hash.
-    - Returns `{ _id, name, email, token }` on success.
-
-JWT:
-- `generateToken(id)` signs with `JWT_SECRET` and 30-day expiration.
-
-#### Auth middleware (`backend/middleware/authMiddleware.js`)
-
-- Reads `Authorization` header.
-- Verifies JWT using `JWT_SECRET`.
-- Loads the user by decoded `id` and assigns `req.user`.
-- On error or missing token → returns 401.
-- Note: If the user was deleted or is a special test user without DB record, `req.user` may end up null; controllers handle this by simply not attaching `userId` on claims.
-
-#### Claims (`backend/controllers/claimController.js` + `routes/claimRoutes.js`)
-
-Routes in `backend/routes/claimRoutes.js`:
-
-- `POST /api/segment-car` – **Protected** by `authMiddleware`:
-  - Uses Multer `upload.single('image')`.
-  - Calls `analyzeClaim`.
-- `POST /api/explain` – **Not currently protected**:
-  - Calls `explainClaim`.
-- `GET /api/claims` – **Not currently protected**:
-  - Calls `getAllClaims` (optionally filtered by `?userId=`).
-- `GET /api/claims/:id` – **Not currently protected**:
-  - Calls `getClaimById`.
-
-Business logic functions:
-
-- `analyzeClaim(req, res)`:
-  - Described in detail in section 4.2.
-- `explainClaim(req, res)`:
-  - Described in detail in section 4.4.
-- `getAllClaims(req, res)`:
-  - If `req.query.userId` is present, filter by that `userId`.
-  - Otherwise return **all** claims (useful for admin / debugging).
-  - Sorts by `createdAt` descending.
-- `getClaimById(req, res)`:
-  - `Claim.findById(req.params.id)`.
-  - Returns 404 if not found.
-
-### 5.4 Gemini config (`backend/config/gemini.js`)
-
-Purpose: **handle Gemini API key rotation safely and simply**.
-
-- Collects keys from:
-  - `GEMINI_API_KEY`
-  - `GEMINI_API_KEY_1`
-  - `GEMINI_API_KEY_2`
-- Filters out any that are empty / undefined.
-- If **no keys are found**:
-  - Logs a critical error.
-  - Calls `process.exit(1)` – this prevents deploying a broken backend without keys.
-- Maintains an index and defines:
-  - `getNextGeminiModel()`:
-    - Picks the next key in round‑robin fashion.
-    - Returns a Gemini **2.5 Flash** model client configured with relaxed safety settings.
-
-This is used only by `explainClaim` for XAI responses.
-
----
-
-6) Frontend Architecture (Detailed)
------------------------------------
-
-### 6.1 Entry and routing
-
-- `src/main.jsx`:
-  - Renders `<App />` into `#root` using `StrictMode`.
-- `src/App.jsx`:
-  - Wraps the app in:
-    - `<ThemeProvider>` – controls dark/light mode.
-    - `<AuthProvider>` – global auth state.
-  - Defines routes using React Router:
-    - `/` → `LandingPage`.
-    - `/dashboard` → `DashboardPage` (protected).
-    - `/analytics` → `AnalyticsPage` (protected).
-    - `/xai-lab` → `XaiLabPage` (protected).
-    - `*` → `LandingPage` (fallback).
-
-Each protected page uses `useAuth()` to check if `user` is present; if not, it returns `<Navigate to="/" replace />`.
-
-### 6.2 Global contexts
-
-#### AuthContext (`src/context/AuthContext.jsx`)
-
-State:
-- `user` – object with `_id`, `name`, `email`, `token`.
-- `token` – JWT string.
-- `loading`, `error`.
-
-On first mount:
-- Reads `user` and `token` from `localStorage`.
-- If they exist:
-  - Parses user JSON.
-  - Sets Axios default `Authorization` header.
-
-Functions:
-- `login(email, password)`:
-  - `POST /api/auth/login` using Axios.
-  - On success:
-    - Sets `user`, `token`, saves to `localStorage`, updates Axios default header.
-- `register(name, email, password)`:
-  - `POST /api/auth/register`.
-  - On success, behaves like login.
-- `logout()`:
-  - Clears state and `localStorage`.
-  - Deletes Axios default `Authorization`.
-
-#### ThemeContext (`src/context/ThemeContext.jsx`)
-
-Manages theme:
-- Keeps `theme` in state.
-- Toggles `theme` between `'light'` and `'dark'`.
-- Adds/removes `class="dark"` on the HTML root element.
-- Stores preference in `localStorage`.
-
-### 6.3 Key pages
-
-#### Landing page (`src/pages/landingPage.jsx`)
-
-- Full marketing / portfolio experience:
-  - Hero section with interactive “damage level” simulation.
-  - Under-the-hood cards describing internal AI stack (YOLOv11, CLIP, XGBoost / CatBoost, SHAP).
-  - “How it works” steps and comparison between traditional adjuster vs AI.
-- Uses:
-  - `Navbar` for top navigation + login/register buttons.
-  - `AuroraBackground` for animated background.
-  - `AuthModal` for authentication.
-
-#### Dashboard page (`src/pages/dashboardPage.jsx`)
-
-Described in detail in section 4.2. Highlights:
-- Implements the **multi-step wizard** using:
-  - `useMockStore` custom hook to store:
-    - `vehicleDetails`, `incidentDetails`, `uploadedImages`, `reportResult`, `currentClaimId`.
-- On submit:
-  - Calls `POST /api/segment-car` with JWT token.
-- Shows:
-  - Animated loading screen while waiting for AI.
-  - Full `AssessmentReport` once data arrives.
-
-#### Analytics page (`src/pages/analyticsPage.jsx`)
-
-Described in detail in section 4.3. Highlights:
-- Uses **real data** from MongoDB:
-  - `GET /api/claims?userId=...`.
-- Builds:
-  - Stat cards (total claims, avg confidence, total cost).
-  - Damage-type bar chart, severity pie chart.
-  - Claim history table with:
-    - Expandable AI report.
-    - Inline “Ask AI” chat connected to `/api/explain`.
-
-#### XAI Lab page (`src/pages/xaiLabPage.jsx`)
-
-Described in detail in section 4.4. Highlights:
-- Dedicated **chat interface** for Explainable AI.
-- Claim selector, chat history, and rich right-hand context panel.
-
-### 6.4 Shared layout / components
-
-- `Sidebar.jsx`:
-  - Persistent left nav on dashboard/analytics/XAI pages.
-  - Shows navigation icons, theme toggle, and logout.
-- `Navbar.jsx`:
-  - Top navbar on landing page.
-  - Handles auth modal open/close and theme toggle.
-- `AuroraBackground.jsx`:
-  - Visual 3D/animated background using React Three Fiber.
-- `AuthModal.jsx`:
-  - Login/register form inside a Radix dialog.
-  - Calls `login` / `register` from `AuthContext`.
-
-### 6.5 API utilities (optional)
-
-- `src/services/api.js`:
-  - Exposes `API.get/post/put/delete` helpers.
-  - Builds base URL from `import.meta.env.VITE_API_URL || 'http://localhost:5000/api'`.
-- `src/controllers/useApi.js`:
-  - A generic `useApi()` hook to manage `loading`, `error`, and data around API calls.
-- `src/components/TestApi.jsx`:
-  - Simple component to call `/test` using `useApi`.
-  - Currently not part of main routing and `/test` isn’t mounted in `server.js`.
-
-In the **main flows**, the app tends to use:
-- `fetch('/api/...')` directly (benefits from Vite dev proxy).
-- `axios` via `AuthContext` for auth.
-
----
-
-7) Environment Variables and Deployment
----------------------------------------
-
-### 7.1 Backend environment (`backend/.env`)
-
-The backend expects:
-
-- `PORT` – default is usually `5000`.
-- `MONGO_URI` – MongoDB connection string (local or Atlas).
-- `JWT_SECRET` – secret for signing JWTs (fallback dev value exists, but you should set a real one).
-- `GEMINI_API_KEY`, `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2` – Gemini API keys used by `config/gemini.js`.
-
-Note: the old `MONGODB_URI` name in some docs is **outdated**; the code uses `MONGO_URI`.
-
-### 7.2 Frontend environment (`frontend/.env`)
-
-Frontend supports:
-
-- `VITE_API_URL` – optional base URL used by the `API` helper in `services/api.js`.
-
-However, the core pages currently use **relative `/api/...` URLs** and rely on:
-
-- Vite dev server proxy (in `vite.config.js`) during development:
-  - Proxies `/api` → `http://localhost:5000`.
-- In production, you normally deploy:
-  - Backend on a domain like `https://your-backend.com`.
-  - Frontend configured to call that backend (either by setting `VITE_API_URL` and refactoring to use the helper, or by appropriate reverse proxy rules).
-
-### 7.3 Production notes (Render + Vercel)
-
-While this repo is portable, it is optimized for:
-
-- **Backend: Render**
-  - Start command: `npm start` (from `backend/`).
-  - Uses `process.env.PORT` provided by Render.
-  - `GET /healthz` is used as a health check.
-  - Rate limiting + `trust proxy` are configured for correctness behind their load balancer.
-- **Frontend: Vercel**
-  - Build from `frontend/`.
-  - `vercel.json` includes a rewrite rule so refreshing `/dashboard` or `/xai-lab` works.
-
----
-
-8) Known Gaps, Risks, and Future Work
--------------------------------------
-
-This section is intentionally honest so you know what to improve next.
-
-### 8.1 Security / auth gaps
-
-- `POST /api/segment-car` is **protected** by `authMiddleware`.
-- But currently:
-  - `GET /api/claims`
-  - `GET /api/claims/:id`
-  - `POST /api/explain`
-  are **not protected**.
-- In a true production setup, you would usually:
-  - Require JWT auth for all of them.
-  - Make sure users can **only** see their own claims.
-
-### 8.2 Routing and test utilities
-
-- `backend/routes/index.js` defines `/test` but is **not mounted**, so:
-  - `GET /api/test` will not work until you mount it in `server.js`.
-- `frontend/src/components/TestApi.jsx` depends on `/test` and is not in the main route tree.
-
-### 8.3 API helper usage
-
-- The `services/api.js` + `useApi` combination is well-structured but not used in core flows.
-- The main pages call:
-  - `fetch('/api/...')` or Axios directly.
-- For a more uniform codebase, you could:
-  - Refactor to use `API.get/post` everywhere.
-  - Centralize error handling and base URL configuration.
-
-### 8.4 Data ownership and edge cases
-
-- Some old claims may have:
-  - No `userId` (because they were created before the auth integration).
-- `authMiddleware` does not handle the case where the JWT decodes but the corresponding `User` no longer exists in DB.
-- `Claim` schema trusts the `aiReport` structure from the HF engine; if that contract changes, you must update both backend and frontend code.
-
-### 8.5 Roadmap ideas (engineering growth)
-
-If you want to push this project into a **portfolio “killer”**:
-
-- Add **protected** access to `/api/claims` and `/api/explain` and implement **per-user claims** only.
-- Use **Clerk/Auth0** or another provider for production-grade auth.
-- Add detailed **unit tests** and **integration tests** for:
-  - `authController`.
-  - `claimController`.
-  - Frontend pages using something like Testing Library.
-- Improve the `API` helper and convert all `fetch` calls to it.
-- Add **PDF export** of an AI report for each claim.
-- Add **performance logging** of HF + Gemini latency and display them in a “System Status” panel.
-
----
-
-9) How to Use This Document
----------------------------
-
-When you are working on this project:
-
-- If you forget **where something lives**, come back to:
-  - Section 2 (repo layout) and 5 / 6 (backend / frontend details).
-- If you want to trace **a single user action**:
-  - Start from section 4 (End-to-end product flow).
-- If you are debugging a bug in AI / data:
-  - Check section 5.3 (claim controller) and section 6.3–6.4 (dashboard / analytics / XAI Lab).
-- If you are preparing for **interviews**:
-  - Use this to explain your architecture clearly:
-    - “We use Hugging Face FastAPI for vision + cost, Gemini for XAI, and store structured reports in MongoDB via Mongoose…”
-
-This file should always be updated when you make **major architectural changes** so that your future self (and recruiters) can quickly understand what’s going on.
-
+Project Context: CrashCost V2 (Production Architecture — March 2026)
+=======================================================================
+
+This file is the complete engineering source of truth for CrashCost V2.
+It is intended to be consumed by AI assistants, future developers, or the project owner
+to immediately understand the entire system without reading source code.
+
+Author: Manideep Kattagoni (SaiManideep220305)
+GitHub: https://github.com/Manideep220305/CrashCostV2
+Live Frontend: https://crash-cost-v2.vercel.app
+Live Backend: https://crashcostv2-1.onrender.com
+AI Engine: https://saimanideep-crashcostv2.hf.space
+
+=======================================================================
+SECTION 1: WHAT THIS SYSTEM IS
+=======================================================================
+
+CrashCost V2 is a full-stack MERN + AI web application for automobile damage
+assessment and insurance cost estimation. It allows a user to:
+
+  1. Register and log in (JWT-based auth)
+  2. Submit a damage claim by filling a multi-step form (vehicle details, incident
+     details, photos) on the Dashboard page
+  3. The backend sends the photo + metadata to a Hugging Face-hosted AI engine
+     which runs three models in a pipeline:
+       a. YOLOv11-Small (instance segmentation) — detects damage regions and types
+       b. CLIP ViT-L/14 (visual-language model) — classifies surface material
+       c. CatBoost Regressor — estimates repair cost in Indian Rupees (₹)
+  4. The backend runs an IoU-based deduplication filter to remove duplicate
+     YOLO detections (preventing inflated costs), then recalculates the total
+  5. The claim is saved to MongoDB Atlas with full vehicle metadata, incident
+     details, and the raw AI report
+  6. The frontend displays an Assessment Report with:
+       - Total estimate + actuarial range
+       - Per-detection cards (severity badge, cost, summary, drivers)
+       - "Panel Replacement Recommended" warning for high-ratio critical damage
+  7. The Analytics page fetches all past claims from MongoDB and displays charts
+     and a history table with inline AI chat capability
+  8. The XAI Lab is a dedicated page where users can ask natural language questions
+     about any specific claim. Questions are answered by Google Gemini 2.5 Flash
+     which receives full claim context (vehicle, detections, prices) as a prompt.
+
+=======================================================================
+SECTION 2: FOUR-LAYER ARCHITECTURE
+=======================================================================
+
+Layer 1 — USER BROWSER
+  Technology: React 19 + Vite (SPA)
+  Hosted on: Vercel (CDN, global edge network)
+  URL: https://crash-cost-v2.vercel.app
+  Communicates with: Layer 2 via HTTPS REST API (JSON + multipart/form-data)
+  Local dev URL: http://localhost:5173 (Vite dev server with /api proxy)
+
+Layer 2 — BACKEND API SERVER
+  Technology: Node.js 22 + Express
+  Hosted on: Render (free tier, may cold start after 15min inactivity)
+  URL: https://crashcostv2-1.onrender.com
+  Communicates with: Layer 1 (responses), Layer 3 (outgoing HTTP POST), Layer 4 (MongoDB)
+  Responsibilities:
+    - JWT-based authentication (bcryptjs + jsonwebtoken)
+    - CORS enforcement (allowlist: Vercel domain + localhost only)
+    - Rate limiting (15 req/min/IP on AI routes via express-rate-limit)
+    - File upload handling (Multer saves to uploads/ temporarily)
+    - Forwarding image + vehicle metadata to HF AI engine
+    - IoU deduplication of YOLO detections
+    - Saving/reading claim documents in MongoDB
+    - Calling Google Gemini for XAI explanations
+
+Layer 3 — AI ENGINE
+  Technology: FastAPI (Python) running YOLOv11 + CLIP + CatBoost
+  Hosted on: Hugging Face Spaces (free GPU compute)
+  URL: https://saimanideep-crashcostv2.hf.space/api/v1/audit
+  Receives: multipart/form-data (image buffer + brand/tier/segment/location/age)
+  Returns: JSON { detections[], total_estimate, estimate_range, context }
+  Also: Gemini 2.5 Flash is called from Layer 2 for XAI (not from this layer)
+
+Layer 4 — DATABASE
+  Technology: MongoDB Atlas (cloud NoSQL, free tier M0)
+  Collections: users, claims
+  ORM layer: Mongoose (schema validation + queries in Layer 2)
+  All claims are permanently stored here for Analytics + XAI recall
+
+=======================================================================
+SECTION 3: COMPLETE REPOSITORY FILE MAP
+=======================================================================
+
+InsureVision3/ (root)
+├── README.md                     ← Professional readme with live demo badges
+├── .gitignore                    ← Ignores: *.pt, *.cbm, *.csv, node_modules
+│
+├── documentation/                ← All project documentation
+│   ├── project_context.md        ← THIS FILE
+│   ├── PROJECT_DOCUMENTATION.md  ← Exhaustive technical breakdown
+│   ├── LEARNING_ROADMAP.md       ← 8-week MERN placement roadmap
+│   ├── ERROR_LOG.md              ← Deployment/bug error log with fixes
+│   └── LOGIN_INSTRUCTIONS.md     ← How to run locally + test credentials
+│
+├── frontend/ (React SPA — deployed to Vercel)
+│   ├── .gitignore                ← Ignores: node_modules/, dist/, .env
+│   ├── .env                      ← VITE_API_URL=http://localhost:5000 (local only)
+│   ├── vercel.json               ← { "rewrites": [{ "source":"/(.*)", "destination":"/index.html" }] }
+│   │                               CRITICAL: Must use "rewrites" not "routes" — "routes" intercepts
+│   │                               JS asset requests and returns HTML causing MIME crash
+│   ├── vite.config.js            ← Vite bundler config + dev proxy: /api → localhost:5000
+│   │                               The proxy ONLY works in dev. Production uses VITE_API_URL.
+│   ├── tailwind.config.js        ← Tailwind config with darkMode: 'class' strategy
+│   ├── postcss.config.js         ← PostCSS config for Tailwind
+│   ├── index.html                ← HTML shell with <div id="root"> where React mounts
+│   ├── package.json              ← react@19, react-router-dom@7, framer-motion, recharts,
+│   │                               lucide-react, @radix-ui/react-dialog, axios, zustand
+│   └── src/
+│       ├── main.jsx              ← React entry: ReactDOM.createRoot('#root').render(<App />)
+│       ├── App.jsx               ← Route config + provider wrapping (ThemeProvider > AuthProvider > Router)
+│       │                           Routes: / → LandingPage, /dashboard → DashboardPage,
+│       │                           /analytics → AnalyticsPage, /xai-lab → XaiLabPage,
+│       │                           /insurance-101 → InsuranceGuidePage, * → LandingPage
+│       ├── index.css             ← Global CSS, Tailwind @layer base/components, aurora animations
+│       │
+│       ├── context/
+│       │   ├── AuthContext.jsx   ← Global auth state. Manages: user, token, loading, error.
+│       │   │                       Functions: login(email,pw), register(name,email,pw), logout().
+│       │   │                       On mount: reads user+token from localStorage, sets axios default header.
+│       │   │                       API calls: POST /api/auth/login, POST /api/auth/register via axios.
+│       │   │                       After success: stores in localStorage + React state + axios default.
+│       │   └── ThemeContext.jsx  ← Dark/light mode. Reads from localStorage. Toggles class="dark"
+│       │                           on <html> element. All Tailwind dark: classes react to this.
+│       │
+│       ├── pages/
+│       │   ├── landingPage.jsx   ← Public homepage. Has: hero section, interactive car damage
+│       │   │                       simulator, "How it works" steps, AI model cards, comparison table.
+│       │   │                       Uses: Navbar, AuroraBackground, AuthModal components.
+│       │   │                       No API calls made from this page.
+│       │   │
+│       │   ├── dashboardPage.jsx ← The most important frontend file. Multi-step claim wizard.
+│       │   │   INTERNAL STATE:    useMockStore() custom hook manages all 5-step state:
+│       │   │   - currentStep (1-5)
+│       │   │   - claimData: { vehicleDetails, incidentDetails, uploadedImages: [{previewUrl, rawFile}] }
+│       │   │   - reportResult (the full aiReport from backend)
+│       │   │   - currentClaimId (MongoDB _id of saved claim)
+│       │   │   - resetClaim() → resets everything back to step 1 (called by "New Claim" buttons)
+│       │   │
+│       │   │   STEP 1 - VehicleDetailsStep:
+│       │   │     Fields: brand (text), model (text), car_age (number), tier (select:
+│       │   │     budget/mid/premium/luxury), segment (select: hatchback/sedan/suv/compact_suv),
+│       │   │     damageLocation (select: front/rear/side/top), car_model_val (number ₹ market value)
+│       │   │
+│       │   │   STEP 2 - IncidentDetailsStep:
+│       │   │     Fields: date (date input), description (textarea)
+│       │   │
+│       │   │   STEP 3 - ImageUploadStep:
+│       │   │     Stores raw File object AND a preview URL (URL.createObjectURL(file)) in state.
+│       │   │     The rawFile is what gets sent to the backend.
+│       │   │     The previewUrl is what gets displayed in the AssessmentReport later.
+│       │   │
+│       │   │   STEP 4 - ReviewStep:
+│       │   │     Read-only summary of all entered data. "Analyze" button triggers handleAnalyze().
+│       │   │
+│       │   │   handleAnalyze() — THE CRITICAL FUNCTION:
+│       │   │     1. Builds FormData: image (rawFile), vehicleDetails (JSON string), incidentDetails (JSON string)
+│       │   │     2. Reads token from localStorage
+│       │   │     3. fetch(VITE_API_URL + '/api/segment-car', { method:'POST',
+│       │   │           headers: { Authorization: 'Bearer <token>' }, body: formData })
+│       │   │        NOTE: No Content-Type header set manually — browser auto-sets multipart with boundary
+│       │   │     4. On success: setReportResult(data.report), setCurrentClaimId(data.claimId), setCurrentStep(5)
+│       │   │
+│       │   │   STEP 5 - AssessmentReport (after API returns):
+│       │   │     Renders: uploaded image, 3 stat cards (detections/confidence/location),
+│       │   │     one card per detection with:
+│       │   │       - Severity badge (color: MINOR=emerald, MODERATE=amber, SEVERE=red)
+│       │   │       - Label (DENT, CRACK, etc.)
+│       │   │       - ⚠️ Panel Replacement badge IF (ratio >= 0.40 AND label in critical_list)
+│       │   │       - Price ₹
+│       │   │       - Summary text
+│       │   │       - Confidence %, Surface, Ratio %
+│       │   │       - Cost driver pills (SHAP feature names)
+│       │   │     Buttons: "Explain Logic" → navigate('/xai-lab?claimId=<id>'),
+│       │   │              "New Claim" (navbar) → store.resetClaim()
+│       │   │              "New Claim" (report) → onReset prop which calls store.resetClaim()
+│       │   │
+│       │   ├── analyticsPage.jsx ← Analytics + claims history. Protected: redirects to / if !user.
+│       │   │   ON MOUNT: fetch(API_URL + '/api/claims?userId=' + user._id)
+│       │   │   DISPLAYS:
+│       │   │     - Stat cards: totalClaims, avgConfidence (flatMap detections), totalCost (sum)
+│       │   │     - BarChart (Recharts): damage type distribution (all detections)
+│       │   │     - PieChart (Recharts): severity distribution (MINOR/MODERATE/SEVERE counts)
+│       │   │     - Claims history table: each row = one claim, click to expand detection list
+│       │   │     - "Ask AI" button per claim: opens inline chat box, calls POST /api/explain
+│       │   │
+│       │   ├── xaiLabPage.jsx    ← Dedicated Gemini XAI chat. Protected: redirects to / if !user.
+│       │   │   URL parameter: ?claimId=<id> pre-selects a claim
+│       │   │   ON MOUNT: fetch(API_URL + '/api/claims?userId=' + user._id) to populate dropdown
+│       │   │   CHAT FLOW:
+│       │   │     - User types question → POST /api/explain { claimId, message }
+│       │   │     - Renders Gemini response in chat history UI
+│       │   │   RIGHT PANEL: Selected claim summary (vehicle, tier, segment, total estimate, detection list)
+│       │   │
+│       │   └── insuranceGuidePage.jsx ← Static education page about insurance basics. No API calls.
+│       │
+│       ├── components/
+│       │   ├── Sidebar.jsx       ← Left navigation for authenticated pages (dashboard/analytics/xai-lab).
+│       │   │                       Shows: CrashCost logo, nav links (Dashboard/Analytics/XAI Lab/Insurance 101),
+│       │   │                       theme toggle button, logout button (calls AuthContext.logout()).
+│       │   │                       Collapsed on mobile, expanded on desktop.
+│       │   ├── Navbar.jsx        ← Top navigation for landing page only.
+│       │   │                       Shows: Logo, nav links, theme toggle, Login/Register buttons.
+│       │   │                       Login/Register buttons open AuthModal.
+│       │   ├── AuthModal.jsx     ← Radix UI Dialog containing login/register tabs.
+│       │   │                       Calls AuthContext.login() or AuthContext.register().
+│       │   │                       On success: modal closes and auth state is updated globally.
+│       │   ├── AuroraBackground.jsx ← Three.js canvas with animated aurora waves using React Three Fiber.
+│       │   │                          Used on landing page for visual impact.
+│       │   └── ui/glowing-effect.jsx ← Reusable component that adds a glowing CSS border effect.
+│       │
+│       ├── services/
+│       │   └── api.js            ← Axios wrapper (get/post/put/delete). Base URL from VITE_API_URL.
+│       │                           NOT used by main pages — main pages use fetch() directly.
+│       └── controllers/
+│           └── useApi.js         ← usApi() hook wrapping api.js with loading/error state management.
+│                                   Also not used in main flows.
+│
+├── backend/ (Express API — deployed to Render, root dir: backend/)
+│   ├── .gitignore                ← Ignores: node_modules/, uploads/, .env
+│   ├── package.json              ← express, mongoose, multer, axios, form-data, dotenv, cors,
+│   │                               jsonwebtoken, bcryptjs, express-rate-limit, @google/generative-ai
+│   │
+│   ├── server.js                 ← PRIMARY ENTRY POINT. Exact initialization order:
+│   │                               1. require('dotenv').config() — loads .env
+│   │                               2. const app = express()
+│   │                               3. app.set('trust proxy', 1) — REQUIRED for Render: makes rate
+│   │                                  limiter use real client IP not Render load balancer IP
+│   │                               4. CORS middleware with allowedOrigins array:
+│   │                                  [process.env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000']
+│   │                                  .filter(Boolean) — removes undefined if FRONTEND_URL not set
+│   │                               5. express.json() + express.urlencoded()
+│   │                               6. Rate limiter: 15 req/min/IP on /api/segment-car and /api/explain
+│   │                               7. fs.mkdirSync('uploads') if not exists
+│   │                               8. mongoose.connect(MONGO_URI) — logs success/failure
+│   │                               9. app.use('/api', claimRoutes)
+│   │                               10. app.use('/api/auth', authRoutes)
+│   │                               11. app.get('/healthz', res => res.send('OK')) — Render health check
+│   │                               12. app.listen(PORT)
+│   │
+│   ├── config/
+│   │   └── gemini.js             ← Multi-key Gemini rotator.
+│   │                               Loads GEMINI_API_KEY, GEMINI_API_KEY_1, GEMINI_API_KEY_2 from env.
+│   │                               Filters empty keys. process.exit(1) if zero keys found (fail fast).
+│   │                               getNextGeminiModel(): round-robin key selection, returns Gemini
+│   │                               2.5 Flash model with safety BLOCK_NONE for dangerous+harassment.
+│   │
+│   ├── models/
+│   │   ├── User.js               ← Schema: { name: String required, email: String required unique,
+│   │   │                           password: String required (bcrypt hash) }. timestamps: true.
+│   │   └── Claim.js              ← Schema: { userId: ObjectId ref User, vehicleDetails: { vin, model,
+│   │                               year, make, brand, tier, segment, damageLocation, car_model_val,
+│   │                               car_age }, incidentDetails: { date, description },
+│   │                               aiReport: { total_estimate, estimate_range[2], context: {brand,tier,
+│   │                               segment,location}, detections: [{ id, label, confidence,
+│   │                               surface_detected, severity, ratio, bbox(Mixed), price, drivers[],
+│   │                               summary, narrative }] }, status: default 'Auto-Assessed' }. timestamps.
+│   │
+│   ├── middleware/
+│   │   └── authMiddleware.js     ← protect function:
+│   │                               1. Checks Authorization: Bearer <token> header
+│   │                               2. jwt.verify(token, JWT_SECRET) → decoded = { id, iat, exp }
+│   │                               3. User.findById(decoded.id).select('-password') → req.user
+│   │                               4. next() → controller runs
+│   │                               On any failure → 401 { message: 'Not authorized' }
+│   │
+│   ├── controllers/
+│   │   ├── authController.js     ← registerUser: validate, findOne(email), bcrypt.hash, User.create,
+│   │   │                           generateToken, return { _id, name, email, token }.
+│   │   │                           loginUser: special case test@test.com/password bypass,
+│   │   │                           otherwise User.findOne(email), bcrypt.compare, generateToken.
+│   │   │                           generateToken(id): jwt.sign({ id }, JWT_SECRET, { expiresIn: '30d' })
+│   │   │
+│   │   └── claimController.js    ← MOST IMPORTANT FILE. Four exported functions:
+│   │
+│   │       analyzeClaim (POST /api/segment-car):
+│   │         A. JSON.parse(req.body.vehicleDetails) and incidentDetails
+│   │         B. fs.readFileSync(req.file.path) → imageBuffer
+│   │            Build FormData for HF: image(buffer), brand, tier, segment, location, age
+│   │         C. axios.post(HF_API_URL='https://saimanideep-crashcostv2.hf.space/api/v1/audit',
+│   │            form, { headers: form.getHeaders(), timeout: 120000 })
+│   │            → aiReport = { detections, total_estimate, estimate_range, context }
+│   │         C.5. IoU DEDUPLICATION:
+│   │            computeOverlap(a, b): calculates IoU = intersectionArea/unionArea
+│   │                                  and containment = intersectionArea/aArea
+│   │            Loop: for each detection, compare with already-kept detections of same label.
+│   │            Drop if IoU > 0.30 OR containment > 0.50.
+│   │            If any were dropped: recalculate total_estimate = sum of unique prices.
+│   │            Recalculate estimate_range: under ₹50k → ±15%, over ₹50k → ±8%.
+│   │         D. fs.unlinkSync(req.file.path) — delete temp upload
+│   │         E. new Claim({ userId: req.user?.id, vehicleDetails, incidentDetails, aiReport }).save()
+│   │         F. res.json({ success: true, claimId: savedClaim._id, report: aiReport })
+│   │         ERROR: timeout → 504 with helpful message. Other errors → 500.
+│   │
+│   │       explainClaim (POST /api/explain):
+│   │         1. const { claimId, message } = req.body
+│   │         2. Claim.findById(claimId)
+│   │         3. getNextGeminiModel()
+│   │         4. Build prompt with full claim context:
+│   │            "You are XAI module... CLAIM CONTEXT: Vehicle: [brand model], Tier, Segment,
+│   │             Location, Age, Incident description. AI ASSESSMENT: Total, Range,
+│   │             Detections: [list with label/severity/price/summary]. USER QUESTION: [message]"
+│   │         5. model.generateContent(prompt) → res.json({ answer: text })
+│   │
+│   │       getAllClaims (GET /api/claims):
+│   │         const { userId } = req.query
+│   │         Claim.find(userId ? { userId } : {}).sort({ createdAt: -1 })
+│   │         res.json(claims)
+│   │
+│   │       getClaimById (GET /api/claims/:id):
+│   │         Claim.findById(req.params.id) → 404 if not found, else res.json(claim)
+│   │
+│   └── routes/
+│       ├── authRoutes.js         ← POST /register → registerUser, POST /login → loginUser (both public)
+│       └── claimRoutes.js        ← POST /segment-car → [protect, upload.single('image'), analyzeClaim]
+│                                   POST /explain → explainClaim (public)
+│                                   GET /claims → getAllClaims (public)
+│                                   GET /claims/:id → getClaimById (public)
+│                                   Multer config: dest: 'uploads/' (disk storage, temp files)
+│
+└── huggingface-api/ (FastAPI — deployed to HF Spaces separately, NOT via this repo's CI/CD)
+    ├── main.py                   ← FastAPI app. Models loaded at startup (not per request).
+    │                               POST /api/v1/audit: receives multipart, runs YOLO+CLIP+CatBoost,
+    │                               returns JSON with detections array and total_estimate.
+    ├── best.pt                   ← YOLOv11-Small custom weights (60MB, excluded from git)
+    ├── crashcost_pricing_model.cbm ← CatBoost regressor weights (4MB, excluded from git)
+    └── requirements.txt          ← Python deps: fastapi, uvicorn, ultralytics, transformers,
+                                    torch, catboost, pillow, opencv-python
+
+=======================================================================
+SECTION 4: COMPLETE API ROUTE MAP
+=======================================================================
+
+BASE URL (production): https://crashcostv2-1.onrender.com
+BASE URL (development): http://localhost:5000
+
+AUTH ROUTES (public, no JWT required):
+
+  POST /api/auth/register
+    Body: { "name": "...", "email": "...", "password": "..." }
+    Success 200: { "_id": "...", "name": "...", "email": "...", "token": "<JWT>" }
+    Error 400: { "message": "User already exists" }
+    Handler: authController.registerUser
+
+  POST /api/auth/login
+    Body: { "email": "...", "password": "..." }
+    Success 200: { "_id": "...", "name": "...", "email": "...", "token": "<JWT>" }
+    Error 401: { "message": "Invalid credentials" }
+    Special: email=test@test.com, password=password → returns mock user without DB hit
+    Handler: authController.loginUser
+
+CLAIM ROUTES:
+
+  POST /api/segment-car  [JWT REQUIRED]
+    Middleware chain: protect → upload.single('image') → analyzeClaim
+    Body: multipart/form-data
+      image: <File> (JPEG/PNG of damaged vehicle)
+      vehicleDetails: '{"brand":"Toyota","tier":"mid","segment":"sedan","damageLocation":"front","car_age":3}'
+      incidentDetails: '{"date":"2026-03-08","description":"Hit a pole"}'
+    Success 200: { "success": true, "claimId": "<MongoDB ObjectId>", "report": { <aiReport> } }
+    Error 400: { "error": "No image uploaded" }
+    Error 504: { "error": "AI Engine timeout" }  (HF cold start)
+    Error 500: { "error": "Analysis failed", "details": "..." }
+    Rate limited: 15 req/min/IP
+
+  POST /api/explain  [PUBLIC]
+    Body: { "claimId": "<MongoDB ObjectId>", "message": "Why is this SEVERE?" }
+    Success 200: { "answer": "<Gemini generated text>" }
+    Error 404: { "error": "Claim not found in database" }
+    Rate limited: 15 req/min/IP
+
+  GET /api/claims  [PUBLIC]
+    Query: ?userId=<MongoDB ObjectId>  (if omitted, returns ALL claims — intended for admin only)
+    Success 200: [ { <claim1> }, { <claim2> }, ... ]  (sorted newest first)
+    Handler: claimController.getAllClaims
+
+  GET /api/claims/:id  [PUBLIC]
+    Params: id = MongoDB ObjectId of claim
+    Success 200: { <full claim document> }
+    Error 404: { "error": "Claim not found" }
+    Handler: claimController.getClaimById
+
+  GET /healthz  [PUBLIC]
+    Success 200: "OK"
+    Purpose: Render health check to keep service alive
+
+=======================================================================
+SECTION 5: DATA FLOW SEQUENCES
+=======================================================================
+
+--- CLAIM SUBMISSION FLOW ---
+
+Browser → POST /api/segment-car (multipart, with JWT)
+    → authMiddleware: jwt.verify → User.findById → req.user set
+    → multer: saves image to uploads/tmpXXX.jpg
+    → analyzeClaim():
+        → fs.readFileSync → imageBuffer
+        → build FormData (image + vehicle metadata)
+        → axios.post(HF FastAPI, formData)
+            → inside HF:
+               → YOLOv11 detects damage boxes + classes + confidence + masks
+               → CLIP classifies surface material for each detection
+               → ratio = box_area / total_image_area
+               → severity = MINOR/MODERATE/SEVERE based on ratio thresholds
+               → CatBoost predicts price per detection
+               → returns JSON with all detections + total
+        → IoU deduplication (backend):
+            → for each pair with same label:
+               → intersectionArea / unionArea > 0.30 → duplicate
+               → intersectionArea / currentArea > 0.50 → contained, duplicate
+               → keep only unique detections
+            → recalculate total + range
+        → fs.unlinkSync (delete temp file)
+        → Claim.save({ userId, vehicleDetails, incidentDetails, aiReport })
+        → return { success, claimId, report }
+Browser ← { success: true, claimId: "...", report: { detections[], total_estimate, ... } }
+    → setReportResult(report) → AssessmentReport renders
+
+--- XAI FLOW ---
+
+User navigates to /xai-lab?claimId=<id>
+Browser → GET /api/claims?userId=<id> → gets all claims list
+User types question → clicks send
+Browser → POST /api/explain { claimId, message }
+    → Claim.findById(claimId) from MongoDB
+    → getNextGeminiModel() (round-robin key rotation)
+    → model.generateContent(prompt with full claim context + question)
+    → Google AI API call
+Browser ← { answer: "<Gemini text response>" }
+    → renders in chat history
+
+=======================================================================
+SECTION 6: ENVIRONMENT VARIABLES
+=======================================================================
+
+BACKEND (set in Render dashboard for production):
+  MONGO_URI          = mongodb+srv://<user>:<pw>@cluster.mongodb.net/insurevision
+  JWT_SECRET         = <long random string>
+  GEMINI_API_KEY     = AIzaSy... (primary key)
+  GEMINI_API_KEY_1   = AIzaSy... (secondary key for rotation)
+  GEMINI_API_KEY_2   = AIzaSy... (tertiary key for rotation)
+  FRONTEND_URL       = https://crash-cost-v2.vercel.app (CORS allowlist)
+  PORT               = automatically set by Render
+
+FRONTEND (set in Vercel dashboard for production):
+  VITE_API_URL       = https://crashcostv2-1.onrender.com (NO trailing slash)
+
+FRONTEND LOCAL DEV (frontend/.env file, NOT committed to git):
+  VITE_API_URL       = http://localhost:5000
+
+NOTE: In Vite, only variables prefixed with VITE_ are exposed to client-side code.
+At build time, Vite replaces import.meta.env.VITE_API_URL with the literal string.
+This is safe because these values are baked into the public JS bundle.
+
+=======================================================================
+SECTION 7: AUTHENTICATION & SECURITY MODEL
+=======================================================================
+
+PASSWORD STORAGE:
+  Never stored in plaintext. bcrypt.hash(password, 10) at registration.
+  bcrypt.compare(plain, hash) at login. 2^10 = 1024 hash iterations.
+
+JWT TOKENS:
+  Signed with JWT_SECRET using HS256 algorithm.
+  Payload: { id: <MongoDB ObjectId>, iat: <unix timestamp>, exp: <unix timestamp> }
+  Expiry: 30 days.
+  Stored in browser localStorage (persists across page refreshes and browser restarts).
+  Sent as Authorization: Bearer <token> header on every protected request.
+
+CORS POLICY:
+  In production, only these origins are allowed:
+    - https://crash-cost-v2.vercel.app (set via FRONTEND_URL env var)
+    - http://localhost:5173
+    - http://localhost:3000
+  Requests with no Origin header (Postman, curl, server-to-server) are allowed.
+  All other origins receive a CORS error.
+
+RATE LIMITING:
+  15 requests per minute per IP on /api/segment-car and /api/explain.
+  These are the routes that call external paid APIs (HF + Gemini).
+  Returns 429 Too Many Requests with message about cooling down.
+
+SECURITY GAPS (known, not yet fixed):
+  - GET /api/claims, GET /api/claims/:id, POST /api/explain are NOT JWT-protected.
+    Any user who knows a claimId can read the claim details.
+  - No per-user filtering enforcement on the server — the frontend filters by userId
+    as a query param which the client controls.
+
+=======================================================================
+SECTION 8: DEPLOYMENT CONFIGURATION
+=======================================================================
+
+RENDER (backend):
+  Root Directory: backend
+  Build Command: npm install
+  Start Command: npm start  (runs "node server.js")
+  Health Check Path: /healthz
+  Free tier: cold starts after 15min inactivity (~30sec wake-up on first request)
+
+VERCEL (frontend):
+  Root Directory: frontend
+  Framework Preset: Vite (auto-detected)
+  Build Command: vite build (auto-detected)
+  Output Directory: dist (auto-detected)
+  vercel.json: { "rewrites": [{ "source":"/(.*)", "destination":"/index.html" }] }
+  CRITICAL: Use rewrites, not routes. Routes intercepts all requests including JS/CSS
+  assets and returns HTML, causing a MIME type crash and white screen.
+
+GITHUB → VERCEL CI/CD:
+  Every push to main branch triggers automatic Vercel rebuild.
+  Build time: ~45 seconds for the Vite React app.
+
+GITHUB → RENDER CI/CD:
+  Every push to main branch triggers automatic Render redeploy.
+  Build time: ~2-3 minutes including npm install.
+
+=======================================================================
+SECTION 9: KNOWN ISSUES, BUGS FIXED, AND FUTURE WORK
+=======================================================================
+
+BUGS FIXED (chronological, see ERROR_LOG.md for full detail):
+1. YOLO duplicate detections → inflated costs. Fixed by IoU deduplication in claimController.js.
+2. Vite dev proxy not available in production → all API calls returned 404 on Vercel.
+   Fixed by adding VITE_API_URL env var and using it in all fetch() calls.
+3. CORS policy was open (app.use(cors())) → restricted to FRONTEND_URL allowlist.
+4. No .gitignore → node_modules, model files, datasets in GitHub.
+   Fixed by adding .gitignore at root, frontend/, and backend/.
+5. "New Claim" buttons used window.location.href → full page reload to landing page.
+   Fixed by using store.resetClaim() to reset local state in-place.
+6. AlertTriangle missing from lucide-react imports → build error in dashboard/analytics.
+   Fixed by adding AlertTriangle to import statements.
+7. vercel.json used "routes" instead of "rewrites" → JS assets returned HTML → white screen.
+   Fixed by replacing routes with rewrites.
+8. FRONTEND_URL not set on Render → CORS blocked Vercel from hitting any API.
+   Fixed by setting FRONTEND_URL env var in Render dashboard.
+
+KNOWN CURRENT GAPS:
+- GET /api/claims, /api/claims/:id, POST /api/explain not JWT-protected
+- No server-side enforcement of per-user claim ownership
+- Mixed API calling patterns (fetch vs axios, inline vs api.js helper)
+- Panel replacement warning only checks 4 labels — could be expanded
+
+FUTURE IMPROVEMENTS:
+- Protect all routes with JWT, enforce per-user data ownership
+- PDF export of assessment report
+- WebSocket real-time notifications for claim processing status
+- Image annotation overlay showing YOLO bounding boxes on the uploaded photo
+- Admin dashboard with API usage analytics and Gemini key health
+- Redis caching for frequently accessed claims
+- Unit tests (Jest + Testing Library) for controllers and pages
+
+=======================================================================
+SECTION 10: HOW TO RUN LOCALLY
+=======================================================================
+
+Prerequisites: Node.js v18+, MongoDB (local or Atlas), Gemini API key
+
+Step 1: Clone the repo
+  git clone https://github.com/Manideep220305/CrashCostV2.git
+  cd CrashCostV2
+
+Step 2: Start the backend
+  cd backend
+  npm install
+  Create backend/.env with:
+    MONGO_URI=mongodb://localhost:27017/insurevision  (or Atlas URI)
+    JWT_SECRET=any-random-string
+    GEMINI_API_KEY=your-gemini-key
+    FRONTEND_URL=http://localhost:5173
+  npm run dev  (uses nodemon if installed, otherwise: node server.js)
+  Backend starts at http://localhost:5000
+
+Step 3: Start the frontend
+  cd frontend
+  npm install
+  Create frontend/.env with:
+    VITE_API_URL=http://localhost:5000
+  npm run dev
+  Frontend starts at http://localhost:5173
+
+Step 4: Test with quick login
+  Email: test@test.com
+  Password: password
+  (This bypasses MongoDB — works even if DB is not connected)
+
+The Vite dev server proxy in vite.config.js forwards /api/* requests to localhost:5000
+so the frontend and backend can communicate without CORS issues in dev.
